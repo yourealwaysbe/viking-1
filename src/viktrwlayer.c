@@ -68,6 +68,9 @@
 #endif
 #include <stdio.h>
 #include <ctype.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #include <gdk/gdkkeysyms.h>
 #include <glib.h>
@@ -3303,6 +3306,123 @@ static void trw_layer_edit_trackpoint ( gpointer pass_along[6] )
   trw_layer_tpwin_init ( vtl );
 }
 
+/* Stucture for track replay via background thread */
+typedef struct {
+  VikTrwLayer *vtl;
+  VikViewport *vvp;
+  VikTrack *track;
+  GList *trps;
+} replay_data;
+
+/* Ideally this should go into the viewport as one may have multiple windows
+   and could replay each independently */
+static gboolean vik_trw_replaying = FALSE;
+
+/*
+ * Function to replay a single track via simply moving the viewport center position to each trackpoint in turn, using a delay related to the difference in timestamps
+ * ATM there is no GUI controls - but can be expanded to have controls such as:
+ *   . start / stop / pause / resume
+ *   . replay speed control
+ *   . whether to ignore 'stops'
+ *   . a slider bar to jump around the track
+ * Thus ATM the only way to stop the replay it is opening the background jobs window and cancelling it there.
+ * It's also not a good idea to try replaying more than one track at a time
+ */
+static int track_replay_thread ( replay_data *rd, gpointer threaddata  )
+{
+  GList *iter;
+  iter = rd->trps;
+
+  VikTrackpoint *tp1, *tp2;
+  const guint tpc_total = vik_track_get_tp_count ( rd->track );
+  guint tpc_current = 0;
+
+  vik_trw_replaying = TRUE;
+
+  // Goto start
+  tp1 = VIK_TRACKPOINT(iter->data);
+  vik_viewport_set_center_coord ( rd->vvp, &(tp1)->coord );
+  gdk_threads_enter();
+  vik_layer_emit_update ( VIK_LAYER(rd->vtl), TRUE );
+  gdk_threads_leave();
+  iter = g_list_next ( iter );
+  tpc_current++;
+
+  guint delay_factor = 0;
+  const guint replay_speed = 60*2; // 2 hours log takes about 1 minutes playback
+  // GUI range eg: 1 .. 60x24
+  const guint replay_factor = 1000000 / replay_speed;
+
+  while (iter) {
+    int res = a_background_thread_progress ( threaddata, ((gdouble)tpc_current) / tpc_total );
+    if (res != 0) {
+      return -1;
+    }
+
+    tp2 = VIK_TRACKPOINT(iter->data);
+    // For tracks (or trackpoints) with no time information use a standard delay factor
+    if (!tp1->has_timestamp || !tp2->has_timestamp)
+      delay_factor = replay_factor;
+    else
+      // TODO may want to consider if differing segments (maybe large time difference)
+      // Perhaps control over replaying 'long stops' cf with draw stop control
+      delay_factor = replay_factor * (tp2->timestamp - tp1->timestamp);
+
+    usleep ( delay_factor );
+
+    vik_viewport_set_center_coord ( rd->vvp, &(VIK_TRACKPOINT(iter->data))->coord);
+    gdk_threads_enter();
+    // Test is helpful to prevent Gtk-CRITICAL warnings if the program is exitted whilst replaying
+    if ( IS_VIK_LAYER(rd->vtl) )
+      vik_layer_emit_update ( VIK_LAYER(rd->vtl), TRUE );
+    gdk_threads_leave();
+
+    tp1 = tp2;
+    iter = g_list_next ( iter );
+    tpc_current++;
+  }
+
+  return 0;
+}
+
+static void replay_data_free ( replay_data *data )
+{
+  // Mark as finished replaying
+  vik_trw_replaying = FALSE;
+}
+
+/*
+ * Replay the track using background thread feature
+ */
+static void trw_layer_track_replay ( gpointer pass_along[6] )
+{
+  VikTrwLayer *vtl = pass_along[0];
+  VikTrack *track = g_hash_table_lookup ( vtl->tracks, pass_along[3] );
+  GList *trps = track->trackpoints;
+  if ( !trps || !trps->data )
+    return;
+
+  if (vik_trw_replaying) {
+    a_dialog_error_msg(VIK_GTK_WINDOW_FROM_LAYER(vtl), _("Replay already in progress. Multiple track replay not supported."));
+    return;
+  }
+
+  replay_data *rd = g_malloc ( sizeof(replay_data) );
+  rd->vtl = vtl;
+  rd->vvp = vik_window_viewport((VikWindow *)(VIK_GTK_WINDOW_FROM_LAYER(vtl)));
+  rd->trps = trps;
+  rd->track = track;
+  gchar *message = g_strdup_printf ( _("Replaying track %s"), (gchar*) pass_along[3] );
+  a_background_thread ( VIK_GTK_WINDOW_FROM_LAYER(vtl),
+			message,
+			(vik_thr_func) track_replay_thread,
+			rd,
+			(vik_thr_free_func) replay_data_free,
+			NULL, // Nothing to do on cancel
+			vik_track_get_tp_count ( rd->track ) );
+  g_free (message);
+}
+
 /*************************************
  * merge/split by time routines 
  *************************************/
@@ -4236,6 +4356,11 @@ static gboolean trw_layer_sublayer_add_menu_items ( VikTrwLayer *l, GtkMenu *men
     item = gtk_image_menu_item_new_with_mnemonic ( _("_View Track") );
     gtk_image_menu_item_set_image ( (GtkImageMenuItem*)item, gtk_image_new_from_stock (GTK_STOCK_ZOOM_FIT, GTK_ICON_SIZE_MENU) );
     g_signal_connect_swapped ( G_OBJECT(item), "activate", G_CALLBACK(trw_layer_auto_track_view), pass_along );
+    gtk_menu_shell_append ( GTK_MENU_SHELL(menu), item );
+    gtk_widget_show ( item );
+
+    item = gtk_menu_item_new_with_mnemonic ( _("_Replay") );
+    g_signal_connect_swapped ( G_OBJECT(item), "activate", G_CALLBACK(trw_layer_track_replay), pass_along );
     gtk_menu_shell_append ( GTK_MENU_SHELL(menu), item );
     gtk_widget_show ( item );
 
