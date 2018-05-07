@@ -830,6 +830,12 @@ To start creating them enter into a create mode via either the <guibutton>Create
 </para>
 
 <para>
+The new TrackWaypoint layer dialog allows the layer to be specified as external.
+In this case the layer is exported as GPX to the file specified instead of stored in the Viking file itself.
+Viking specific options, such as track/route colour may not be saved.
+</para>
+
+<para>
 The sublayers also offer right click menu options.
 These are the same as those available at the TrackWaypoint level, but only those that relate to the sublayer type.
 </para>
