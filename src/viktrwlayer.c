@@ -737,6 +737,7 @@ static gboolean trw_read_file ( VikTrwLayer *trw, FILE *f, const gchar *dirpath 
 static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *dirpath );
 static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar *dirpath );
 static gboolean trw_load_external_layer ( VikTrwLayer *trw );
+static void trw_ensure_layer_loaded ( VikTrwLayer *trw );
 
 /* End Layer Interface function definitions */
 
@@ -2569,6 +2570,7 @@ static void trw_layer_draw_with_highlight ( VikTrwLayer *l, gpointer data, gbool
 
 static void trw_layer_draw ( VikTrwLayer *l, gpointer data )
 {
+  trw_ensure_layer_loaded ( l );
   // If this layer is to be highlighted - then don't draw now - as it will be drawn later on in the specific highlight draw stage
   // This may seem slightly inefficient to test each time for every layer
   //  but for a layer with *lots* of tracks & waypoints this can save some effort by not drawing the items twice
@@ -11332,6 +11334,10 @@ static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *di
 {
   g_assert ( trw != NULL && trw->external_file != NULL );
 
+  // if never loaded, no need to rewrite
+  if ( trw->external_layer && ! trw->external_loaded )
+    return;
+
   gchar *extfile_full = util_make_absolute_filename ( trw->external_file, dirpath );
   gchar *extfile = extfile_full ? extfile_full : trw->external_file;
   gboolean success = a_file_export ( trw, extfile, FILE_TYPE_GPX, NULL, TRUE );
@@ -11352,7 +11358,8 @@ static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar 
 
   g_free ( trw->external_dirpath );
   trw->external_dirpath = g_strdup ( dirpath );
-  // TODO: load if visible
+
+  // leave loading to trw_layer_draw function
   trw->external_loaded = FALSE;
 
   // read ~EndLayerData
@@ -11371,6 +11378,8 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
   gchar *extfile_full = util_make_absolute_filename ( trw->external_file, trw->external_dirpath );
   gchar *extfile = extfile_full ? extfile_full : trw->external_file;
 
+  g_debug ( "Loading %s", extfile );
+  
   gboolean failed = TRUE;
   FILE *ext_f = g_fopen ( extfile, "r" );
   if ( ext_f ) {
@@ -11384,7 +11393,8 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
     vik_window_clear_busy_cursor ( vw );
   }
 
-  trw->external_loaded = ! failed;
+  // TODO: set to failed?
+  trw->external_loaded = TRUE;
 
   if ( failed ) {
     gchar *msg = g_strdup_printf ( _("WARNING: issues encountered loading external layer %s from %s"), VIK_LAYER(trw)->name, extfile );
@@ -11400,5 +11410,8 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
 static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
 {
   if ( trw->external_layer && ! trw->external_loaded )
+  {
     trw_load_external_layer ( trw );
+    trw_layer_post_read ( trw, NULL, FALSE );
+  }
 }

@@ -832,6 +832,7 @@ To start creating them enter into a create mode via either the <guibutton>Create
 <para>
 The new TrackWaypoint layer dialog allows the layer to be specified as external.
 In this case the layer is exported as GPX to the file specified instead of stored in the Viking file itself.
+The layer is loaded only when it is displayed or selected and so will not appear in any summary statistics if it has not been loaded.
 Viking specific options, such as track/route colour may not be saved.
 </para>
 
