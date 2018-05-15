@@ -157,6 +157,8 @@ void trw_layer_update_treeview ( VikTrwLayer *vtl, VikTrack *trk );
 
 void trw_layer_dialog_shift ( VikTrwLayer *vtl, GtkWindow *dialog, VikCoord *coord, gboolean vertical );
 
+void trw_layer_replace_external ( VikTrwLayer *vtl, gchar *external_file );
+
 typedef struct {
   VikTrack *trk; // input
   gpointer uuid; // output

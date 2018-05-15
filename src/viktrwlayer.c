@@ -11415,3 +11415,17 @@ static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
     trw_layer_post_read ( trw, NULL, FALSE );
   }
 }
+
+/**
+ * Convert layer to an external layer and load data from file specified
+ * by external_file
+ */
+void trw_layer_replace_external ( VikTrwLayer *trw, gchar *external_file )
+{
+  trw->external_layer = TRUE;
+  g_free ( trw->external_file );
+  trw->external_file = g_strdup ( external_file );
+  trw->external_loaded = FALSE;
+  trw_ensure_layer_loaded ( trw );
+}
+

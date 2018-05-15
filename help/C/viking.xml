@@ -527,6 +527,16 @@ GPX and KML files may also be appended, but this is exactly the same as the norm
 </para>
 </section>
 
+<section><title>Open GPX as External Layer</title>
+<para>
+Located on the <menuchoice><guimenu>File</guimenu><guisubmenu>Open GPX as External Layer...</guisubmenu></menuchoice> menu only.
+</para>
+<para>
+Selecting a GPX file from this method will create an external layer that loads from and saves to the specified file.
+This is in contrast to importing the data and storing it in the Viking file.
+</para>
+</section>
+
 <section><title>Properties</title>
 <para>
 Located on the <menuchoice><guimenu>File</guimenu><guisubmenu>Properties</guisubmenu></menuchoice> menu only.
