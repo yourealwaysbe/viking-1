@@ -11338,14 +11338,11 @@ static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *di
   if ( trw->external_layer && ! trw->external_loaded )
     return;
 
-  gchar *extfile_full = util_make_absolute_filename ( trw->external_file, dirpath );
-  gchar *extfile = extfile_full ? extfile_full : trw->external_file;
-  gboolean success = a_file_export ( trw, extfile, FILE_TYPE_GPX, NULL, TRUE );
+  gboolean success = a_file_export ( trw, trw->external_file, FILE_TYPE_GPX, NULL, TRUE );
     
   if ( ! success ) {
     gchar *msg = g_strdup_printf ( _("Could not write external layer %s to %s, please fix and save before exiting or data will be lost"), VIK_LAYER(trw)->name, extfile );
     a_dialog_error_msg ( VIK_GTK_WINDOW_FROM_LAYER(trw), msg );
-    //vik_statusbar_set_message ( vik_window_get_statusbar ( vw ), VIK_STATUSBAR_INFO, msg );
     g_free ( msg );
   }
 
@@ -11378,8 +11375,6 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
   gchar *extfile_full = util_make_absolute_filename ( trw->external_file, trw->external_dirpath );
   gchar *extfile = extfile_full ? extfile_full : trw->external_file;
 
-  g_debug ( "Loading %s", extfile );
-  
   gboolean failed = TRUE;
   FILE *ext_f = g_fopen ( extfile, "r" );
   if ( ext_f ) {
