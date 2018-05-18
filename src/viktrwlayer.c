@@ -11385,9 +11385,9 @@ static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar 
   // read ~EndLayerData
   static char line_buffer[15];
   fgets(line_buffer, 15, f);
-  gboolean failed = ! ( strlen(line_buffer) >= 13 && strncmp ( line_buffer, "~EndLayerData", 13 ) == 0 );
+  gboolean success = ( strlen(line_buffer) >= 13 && strncmp ( line_buffer, "~EndLayerData", 13 ) == 0 );
 
-  return failed;
+  return success;
 }
 
 static gboolean trw_load_external_layer ( VikTrwLayer *trw )
@@ -11421,7 +11421,7 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
 
   g_free ( extfile_full );
 
-  return failed;
+  return ! failed;
 }
 
 static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
