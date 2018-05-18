@@ -11427,7 +11427,6 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
 static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
 {
   if ( trw->external_layer != VIK_TRW_LAYER_INTERNAL && ! trw->external_loaded ) {
-  {
     // set to true for now else the load will trigger redraws that will
     // trigger reloads...
     // trw_load_external_layer will set this to false if the load fails
