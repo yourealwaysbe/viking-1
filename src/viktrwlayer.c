@@ -755,6 +755,7 @@ static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *di
 static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar *dirpath );
 static gboolean trw_load_external_layer ( VikTrwLayer *trw );
 static void trw_ensure_layer_loaded ( VikTrwLayer *trw );
+static void trw_update_layer_icon ( VikTrwLayer *trw );
 
 /* End Layer Interface function definitions */
 
@@ -1350,7 +1351,12 @@ static gboolean trw_layer_set_param ( VikTrwLayer *vtl, VikLayerSetParam *vlsp )
     case PARAM_MDAUTH: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->author = g_strdup (vlsp->data.s); break;
     case PARAM_MDTIME: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->timestamp = g_strdup (vlsp->data.s); break;
     case PARAM_MDKEYS: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->keywords = g_strdup (vlsp->data.s); break;
-    case PARAM_EXTL: if ( vlsp->data.u < VIK_EXTERNAL_TYPE_LAST ) vtl->external_layer = vlsp->data.u; break;
+    case PARAM_EXTL: 
+      if ( vlsp->data.u < VIK_EXTERNAL_TYPE_LAST ) {
+          vtl->external_layer = vlsp->data.u;
+          trw_update_layer_icon ( vtl );
+      }
+      break;
     case PARAM_EXTF: 
       if ( vlsp->data.s ) {
         g_free (vtl->external_file);
@@ -10954,6 +10960,8 @@ static void trw_layer_post_read ( VikTrwLayer *vtl, VikViewport *vvp, gboolean f
       vtl->metadata->timestamp = g_time_val_to_iso8601 ( &timestamp );
     }
   }
+
+  trw_update_layer_icon ( vtl );
 }
 
 VikCoordMode vik_trw_layer_get_coord_mode ( VikTrwLayer *vtl )
@@ -11436,5 +11444,21 @@ void trw_layer_replace_external ( VikTrwLayer *trw, gchar *external_file )
   trw->external_file = g_strdup ( external_file );
   trw->external_loaded = FALSE;
   trw_ensure_layer_loaded ( trw );
+}
+
+static void trw_update_layer_icon ( VikTrwLayer *trw )
+{
+  if ( ! VIK_LAYER(trw)->vt )
+    return;
+
+  const GdkPixdata *data;
+  switch ( trw->external_layer ) {
+    case VIK_TRW_LAYER_EXTERNAL: data = &viktrwlayer_external_pixbuf; break;
+    case VIK_TRW_LAYER_EXTERNAL_NO_WRITE: data = &viktrwlayer_external_nowrite_pixbuf; break;
+    default: data = &viktrwlayer_pixbuf; break;
+  }
+
+  GdkPixbuf *buf = gdk_pixbuf_from_pixdata ( data, FALSE, NULL );
+  vik_treeview_item_set_icon ( VIK_LAYER(trw)->vt, &(VIK_LAYER(trw)->iter), buf );
 }
 
