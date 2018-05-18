@@ -97,6 +97,8 @@ typedef enum {
         tt_waypoint,
         tt_waypoint_coord,
         tt_waypoint_name,
+
+        tt_color
 } tag_type;
 
 typedef struct tag_mapping {
@@ -114,6 +116,7 @@ typedef struct {
  * xpath(ish) mappings between full tag paths and internal identifiers.
  * These appear in the order they appear in the GPX specification.
  * If it's not a tag we explicitly handle, it doesn't go here.
+ * Extensions are added at the end
  */
 
 tag_mapping tag_path_map[] = {
@@ -181,6 +184,8 @@ tag_mapping tag_path_map[] = {
         { tt_trk_trkseg_trkpt_name, "/gpx/rte/rtept/name" },
         { tt_trk_trkseg_trkpt_ele, "/gpx/rte/rtept/ele" },
 
+        { tt_color, "/gpx/trk/extensions/color" },
+        { tt_color, "/gpx/rte/extensions/color" },
         {0}
 };
 
@@ -326,6 +331,7 @@ static void gpx_start(UserDataT *ud, const char *el, const char **attr)
      case tt_trk_src:
      case tt_trk_type:
      case tt_trk_name:
+     case tt_color:
        g_string_erase ( c_cdata, 0, -1 ); /* clear the cdata buffer */
        break;
 
@@ -615,6 +621,11 @@ static void gpx_end(UserDataT *ud, const char *el)
        g_string_erase ( c_cdata, 0, -1 );
        break;
 
+     case tt_color:
+       c_tr->has_color = gdk_color_parse ( c_cdata->str, &(c_tr->color) );
+       g_string_erase ( c_cdata, 0, -1 );
+       break;
+
      default: break;
   }
 
@@ -655,6 +666,7 @@ static void gpx_cdata(void *dta, const XML_Char *s, int len)
     case tt_trk_trkseg_trkpt_vdop:
     case tt_trk_trkseg_trkpt_pdop:
     case tt_waypoint_name: /* .loc name is really description. */
+    case tt_color:
       g_string_append_len ( c_cdata, s, len );
       break;
 
@@ -1133,6 +1145,14 @@ static void gpx_write_track ( VikTrack *t, GpxWritingContext *context )
     tmp = entitize ( t->type );
     fprintf ( f, "  <type>%s</type>\n", tmp );
     g_free ( tmp );
+  }
+
+  if ( t->has_color )
+  {
+    int r = (int)(t->color.red/256);
+    int g = (int)(t->color.green/256);
+    int b = (int)(t->color.blue/256);
+    fprintf ( f, "  <extensions><color>#%.2x%.2x%.2x</color></extensions>\n", r, g, b );
   }
 
   /* No such thing as a rteseg! */
