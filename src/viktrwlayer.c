@@ -124,6 +124,13 @@ typedef enum {
   FS_NUM_SIZES
 } font_size_t;
 
+typedef enum {
+  VIK_TRW_LAYER_INTERNAL,
+  VIK_TRW_LAYER_EXTERNAL,
+  VIK_TRW_LAYER_EXTERNAL_NO_WRITE,
+  VIK_EXTERNAL_TYPE_LAST
+} trw_external_type_t;
+
 struct _VikTrwLayer {
   VikLayer vl;
   GHashTable *tracks;
@@ -229,7 +236,7 @@ struct _VikTrwLayer {
   // One per layer
   GtkWidget *tracks_analysis_dialog;
 
-  gboolean external_layer;
+  trw_external_type_t external_layer;
   gchar *external_file;
   gboolean external_loaded;
   gchar *external_dirpath;
@@ -550,6 +557,14 @@ static gchar* params_sort_order[] = {
   NULL
 };
 
+// Needs to align with trw_external_type_t
+static gchar* params_external_type[] = {
+  N_("No"),
+  N_("Yes"),
+  N_("No write"),
+  NULL
+};
+
 static VikLayerParamData black_color_default ( void ) {
   VikLayerParamData data; gdk_color_parse ( "#000000", &data.c ); return data; // Black
 }
@@ -588,6 +603,8 @@ static VikLayerParamData string_default ( void )
   data.s = "";
   return data;
 }
+
+static VikLayerParamData external_layer_default ( void ) { return VIK_LPD_UINT ( VIK_TRW_LAYER_INTERNAL ); }
 
 VikLayerParam trw_layer_params[] = {
   { VIK_LAYER_TRW, "tracks_visible", VIK_LAYER_PARAM_BOOLEAN, VIK_LAYER_NOT_IN_PROPERTIES, NULL, 0, NULL, NULL, NULL, vik_lpd_true_default, NULL, NULL },
@@ -638,7 +655,7 @@ VikLayerParam trw_layer_params[] = {
   { VIK_LAYER_TRW, "metadataauthor", VIK_LAYER_PARAM_STRING, GROUP_METADATA, N_("Author"), VIK_LAYER_WIDGET_ENTRY, NULL, NULL, NULL, string_default, NULL, NULL },
   { VIK_LAYER_TRW, "metadatatime", VIK_LAYER_PARAM_STRING, GROUP_METADATA, N_("Creation Time"), VIK_LAYER_WIDGET_ENTRY, NULL, NULL, NULL, string_default, NULL, NULL },
   { VIK_LAYER_TRW, "metadatakeywords", VIK_LAYER_PARAM_STRING, GROUP_METADATA, N_("Keywords"), VIK_LAYER_WIDGET_ENTRY, NULL, NULL, NULL, string_default, NULL, NULL },
-  { VIK_LAYER_TRW, "external_layer", VIK_LAYER_PARAM_BOOLEAN, GROUP_FILESYSTEM, N_("External layer:"), VIK_LAYER_WIDGET_CHECKBUTTON, NULL, NULL, NULL, vik_lpd_false_default, NULL, NULL },
+  { VIK_LAYER_TRW, "external_layer", VIK_LAYER_PARAM_UINT, GROUP_FILESYSTEM, N_("External layer:"), VIK_LAYER_WIDGET_COMBOBOX, params_external_type, NULL, N_("Layer data stored in the Viking file, in an external file, or in an external file but changes are not written to the file (file only loaded at startup)"), external_layer_default, NULL, NULL },
   { VIK_LAYER_TRW, "external_file", VIK_LAYER_PARAM_STRING, GROUP_FILESYSTEM, N_("Save layer as:"), VIK_LAYER_WIDGET_FILESAVE, GINT_TO_POINTER(VF_FILTER_GPX), NULL, N_("Specify where layer should be saved.  Overwrites file if it exists."), string_default, NULL, NULL },
 };
 
@@ -1333,7 +1350,7 @@ static gboolean trw_layer_set_param ( VikTrwLayer *vtl, VikLayerSetParam *vlsp )
     case PARAM_MDAUTH: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->author = g_strdup (vlsp->data.s); break;
     case PARAM_MDTIME: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->timestamp = g_strdup (vlsp->data.s); break;
     case PARAM_MDKEYS: if ( vlsp->data.s && vtl->metadata ) vtl->metadata->keywords = g_strdup (vlsp->data.s); break;
-    case PARAM_EXTL: vtl->external_layer = vlsp->data.b; break;
+    case PARAM_EXTL: if ( vlsp->data.u < VIK_EXTERNAL_TYPE_LAST ) vtl->external_layer = vlsp->data.u; break;
     case PARAM_EXTF: 
       if ( vlsp->data.s ) {
         g_free (vtl->external_file);
@@ -1390,7 +1407,7 @@ static VikLayerParamData trw_layer_get_param ( VikTrwLayer *vtl, guint16 id, gbo
     case PARAM_MDAUTH: if (vtl->metadata) { rv.s = vtl->metadata->author; } break;
     case PARAM_MDTIME: if (vtl->metadata) { rv.s = vtl->metadata->timestamp; } break;
     case PARAM_MDKEYS: if (vtl->metadata) { rv.s = vtl->metadata->keywords; } break;
-    case PARAM_EXTL: rv.b = vtl->external_layer; break;
+    case PARAM_EXTL: rv.u = vtl->external_layer; break;
     case PARAM_EXTF: rv.s = vtl->external_file; break;
     default: break;
   }
@@ -11314,16 +11331,16 @@ static void trw_layer_waypoint_list_dialog ( menu_array_layer values )
 
 static void trw_write_file ( VikTrwLayer *trw, FILE *f, const gchar *dirpath ) 
 {
-  if ( trw->external_layer ) {
+  if ( trw->external_layer == VIK_TRW_LAYER_EXTERNAL ) {
     trw_write_file_external ( trw, f, dirpath );
-  } else {
+  } else if ( trw->external_layer != VIK_TRW_LAYER_EXTERNAL_NO_WRITE ) {
     a_gpspoint_write_file( trw, f, dirpath );
   }
 }
 
 gboolean trw_read_file ( VikTrwLayer *trw, FILE *f, const gchar *dirpath )
 {
-  if ( trw->external_layer ) {
+  if ( trw->external_layer != VIK_TRW_LAYER_INTERNAL ) {
     return trw_read_file_external ( trw, f, dirpath );
   } else {
     return a_gpspoint_read_file( trw, f, dirpath );
@@ -11334,8 +11351,8 @@ static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *di
 {
   g_assert ( trw != NULL && trw->external_file != NULL );
 
-  // if never loaded, no need to rewrite
-  if ( trw->external_layer && ! trw->external_loaded )
+  // if never loaded or not for writing, no need to rewrite
+  if ( trw->external_layer != VIK_TRW_LAYER_EXTERNAL || ! trw->external_loaded )
     return;
 
   gboolean success = a_file_export ( trw, trw->external_file, FILE_TYPE_GPX, NULL, TRUE );
@@ -11401,8 +11418,7 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
 
 static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
 {
-  if ( trw->external_layer && ! trw->external_loaded )
-  {
+  if ( trw->external_layer != VIK_TRW_LAYER_INTERNAL && ! trw->external_loaded ) {
     trw_load_external_layer ( trw );
     trw_layer_post_read ( trw, NULL, FALSE );
   }
@@ -11410,11 +11426,12 @@ static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
 
 /**
  * Convert layer to an external layer and load data from file specified
- * by external_file
+ * by external_file.  Set as a read only layer (i.e. don't write back to
+ * file by default)
  */
 void trw_layer_replace_external ( VikTrwLayer *trw, gchar *external_file )
 {
-  trw->external_layer = TRUE;
+  trw->external_layer = VIK_TRW_LAYER_EXTERNAL_NO_WRITE;
   g_free ( trw->external_file );
   trw->external_file = g_strdup ( external_file );
   trw->external_loaded = FALSE;
