@@ -2891,6 +2891,8 @@ static void trw_layer_realize ( VikTrwLayer *vtl, VikTreeview *vt, GtkTreeIter *
   trw_layer_verify_thumbnails ( vtl );
 
   trw_layer_sort_all ( vtl );
+
+  trw_update_layer_icon ( vtl );
 }
 
 static gboolean trw_layer_sublayer_toggle_visible ( VikTrwLayer *l, gint subtype, gpointer sublayer )
@@ -10960,8 +10962,6 @@ static void trw_layer_post_read ( VikTrwLayer *vtl, VikViewport *vvp, gboolean f
       vtl->metadata->timestamp = g_time_val_to_iso8601 ( &timestamp );
     }
   }
-
-  trw_update_layer_icon ( vtl );
 }
 
 VikCoordMode vik_trw_layer_get_coord_mode ( VikTrwLayer *vtl )
@@ -11385,7 +11385,7 @@ static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar 
   // read ~EndLayerData
   static char line_buffer[15];
   fgets(line_buffer, 15, f);
-  gboolean failed = ( strlen(line_buffer) >= 13 && strncmp ( line_buffer, "~EndLayerData", 13 ) == 0 );
+  gboolean failed = ! ( strlen(line_buffer) >= 13 && strncmp ( line_buffer, "~EndLayerData", 13 ) == 0 );
 
   return failed;
 }
