@@ -754,7 +754,6 @@ static gboolean trw_read_file ( VikTrwLayer *trw, FILE *f, const gchar *dirpath 
 static void trw_write_file_external ( VikTrwLayer *trw, FILE *f, const gchar *dirpath );
 static gboolean trw_read_file_external ( VikTrwLayer *trw, FILE *f, const gchar *dirpath );
 static gboolean trw_load_external_layer ( VikTrwLayer *trw );
-static void trw_ensure_layer_loaded ( VikTrwLayer *trw );
 static void trw_update_layer_icon ( VikTrwLayer *trw );
 
 /* End Layer Interface function definitions */
@@ -11424,7 +11423,7 @@ static gboolean trw_load_external_layer ( VikTrwLayer *trw )
   return ! failed;
 }
 
-static void trw_ensure_layer_loaded ( VikTrwLayer *trw )
+void trw_ensure_layer_loaded ( VikTrwLayer *trw )
 {
   if ( trw->external_layer != VIK_TRW_LAYER_INTERNAL && ! trw->external_loaded ) {
     // set to true for now else the load will trigger redraws that will
