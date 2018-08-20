@@ -2159,6 +2159,16 @@ One can switch between the <link linkend="route_create">Create Route</link> and 
 </para>
 </section>
 
+<section id="cutter" xreflabel="Cutter"><title>Track Cutter</title>
+<para>
+Enable this tool by clicking on the toolbar icon: <guiicon><inlinegraphic fileref="figures/cutter_18.png"/></guiicon>
+</para>
+<para>
+Use this tool to split a track or route.
+After enabling the tool, click on the track/route point of the track/route at the position where you want the split to occur.
+</para>
+</section>
+
 <section id="splicer" xreflabel="Splicer"><title>Edit a Track/Route Using the Splicer</title>
 <para>
 Enable this tool by clicking on the toolbar icon: <guiicon><inlinegraphic fileref="figures/splicer_18.png"/></guiicon>

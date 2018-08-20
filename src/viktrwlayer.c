@@ -412,10 +412,13 @@ static gboolean tool_new_waypoint_click ( VikTrwLayer *vtl, GdkEventButton *even
 static gpointer tool_extended_route_finder_create ( VikWindow *vw, VikViewport *vvp);
 static gboolean tool_extended_route_finder_click ( VikTrwLayer *vtl, GdkEventButton *event, VikViewport *vvp );
 static gboolean tool_extended_route_finder_key_press ( VikTrwLayer *vtl, GdkEventKey *event, VikViewport *vvp );
+static gpointer tool_cutter_create ( VikWindow *vw, VikViewport *vvp);
+static gboolean tool_cutter_click ( VikTrwLayer *vtl, GdkEventButton *event, VikViewport *vvp );
 static gpointer tool_splicer_create ( VikWindow *vw, VikViewport *vvp);
 static gboolean tool_splicer_click ( VikTrwLayer *vtl, GdkEventButton *event, VikViewport *vvp );
 static gboolean tool_splicer_key_press ( VikTrwLayer *vtl, GdkEventKey *event, VikViewport *vvp );
 static void tool_splicer_reset ( VikTrwLayer *vtl );
+
 
 static void cached_pixbuf_free ( CachedPixbuf *cp );
 static gint cached_pixbuf_cmp ( CachedPixbuf *cp, const gchar *name );
@@ -474,6 +477,16 @@ static VikToolInterface trw_layer_tools[] = {
     (VikToolKeyFunc) tool_extended_route_finder_key_press,
     TRUE, // Still need to handle clicks when in PAN mode to disable the potential trackpoint drawing
     GDK_CURSOR_IS_PIXMAP, &cursor_route_finder_pixbuf, NULL },
+
+  { &cutter_18_pixbuf,
+    { "Cutter", "vik-icon-Cutter", N_("Cutter"), "<control><shift>C", N_("Cutter"), 0 },
+    (VikToolConstructorFunc) tool_cutter_create,  NULL, NULL, NULL,
+    (VikToolMouseFunc) tool_cutter_click,
+    (VikToolMouseMoveFunc) NULL,
+    (VikToolMouseFunc) NULL,
+    (VikToolKeyFunc) NULL,
+    TRUE, // Still need to handle clicks when in PAN mode to disable the potential trackpoint drawing
+    GDK_CURSOR_IS_PIXMAP, &cursor_cutter_pixbuf, NULL },
 
   { &splicer_18_pixbuf,
     { "Splicer", "vik-icon-Splicer", N_("Splicer"), "<control><shift>D", N_("Splicer"), 0 },
@@ -10375,6 +10388,39 @@ static void tool_edit_trackpoint_destroy ( tool_ed_t *t )
   g_free ( t );
 }
 
+static gboolean tool_select_tp( VikTrwLayer *vtl, TPSearchParams *params )
+{
+  if ( vtl->tracks_visible )
+    g_hash_table_foreach ( vtl->tracks, (GHFunc) track_search_closest_tp, params);
+
+  if ( params->closest_tp )
+  {
+    vik_treeview_select_iter ( VIK_LAYER(vtl)->vt, g_hash_table_lookup ( vtl->tracks_iters, params->closest_track_id ), TRUE );
+    vtl->current_tpl = params->closest_tpl;
+    vtl->current_tp_id = params->closest_track_id;
+    vtl->current_tp_track = g_hash_table_lookup ( vtl->tracks, params->closest_track_id );
+    set_statusbar_msg_info_trkpt ( vtl, params->closest_tp );
+    vik_layer_emit_update ( VIK_LAYER(vtl) );
+    return TRUE;
+  }
+
+  if ( vtl->routes_visible )
+    g_hash_table_foreach ( vtl->routes, (GHFunc) track_search_closest_tp, params);
+
+  if ( params->closest_tp )
+  {
+    vik_treeview_select_iter ( VIK_LAYER(vtl)->vt, g_hash_table_lookup ( vtl->routes_iters, params->closest_track_id ), TRUE );
+    vtl->current_tpl = params->closest_tpl;
+    vtl->current_tp_id = params->closest_track_id;
+    vtl->current_tp_track = g_hash_table_lookup ( vtl->routes, params->closest_track_id );
+    set_statusbar_msg_info_trkpt ( vtl, params->closest_tp );
+    vik_layer_emit_update ( VIK_LAYER(vtl) );
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
 /**
  * tool_edit_trackpoint_click:
  *
@@ -10428,33 +10474,9 @@ static gboolean tool_edit_trackpoint_click ( VikTrwLayer *vtl, GdkEventButton *e
 
   }
 
-  if ( vtl->tracks_visible )
-    g_hash_table_foreach ( vtl->tracks, (GHFunc) track_search_closest_tp, &params);
-
-  if ( params.closest_tp )
+  if ( tool_select_tp ( vtl, &params ) )
   {
-    vik_treeview_select_iter ( VIK_LAYER(vtl)->vt, g_hash_table_lookup ( vtl->tracks_iters, params.closest_track_id ), TRUE );
-    vtl->current_tpl = params.closest_tpl;
-    vtl->current_tp_id = params.closest_track_id;
-    vtl->current_tp_track = g_hash_table_lookup ( vtl->tracks, params.closest_track_id );
     trw_layer_tpwin_init ( vtl );
-    set_statusbar_msg_info_trkpt ( vtl, params.closest_tp );
-    vik_layer_emit_update ( VIK_LAYER(vtl) );
-    return TRUE;
-  }
-
-  if ( vtl->routes_visible )
-    g_hash_table_foreach ( vtl->routes, (GHFunc) track_search_closest_tp, &params);
-
-  if ( params.closest_tp )
-  {
-    vik_treeview_select_iter ( VIK_LAYER(vtl)->vt, g_hash_table_lookup ( vtl->routes_iters, params.closest_track_id ), TRUE );
-    vtl->current_tpl = params.closest_tpl;
-    vtl->current_tp_id = params.closest_track_id;
-    vtl->current_tp_track = g_hash_table_lookup ( vtl->routes, params.closest_track_id );
-    trw_layer_tpwin_init ( vtl );
-    set_statusbar_msg_info_trkpt ( vtl, params.closest_tp );
-    vik_layer_emit_update ( VIK_LAYER(vtl) );
     return TRUE;
   }
 
@@ -11758,3 +11780,31 @@ static gboolean tool_splicer_key_press ( VikTrwLayer *vtl, GdkEventKey *event, V
   }
   return FALSE;
 }
+
+/*** Cutter ***/
+
+static gpointer tool_cutter_create ( VikWindow *vw, VikViewport *vvp)
+{
+  return vvp;
+}
+
+static gboolean tool_cutter_click ( VikTrwLayer *vtl, GdkEventButton *event, VikViewport *vvp )
+{
+  TPSearchParams params;
+  params.vvp = vvp;
+  params.x = event->x;
+  params.y = event->y;
+  params.closest_track_id = NULL;
+  params.closest_tp = NULL;
+  params.closest_tpl = NULL;
+  params.bbox = vik_viewport_get_bbox ( vvp );
+
+  if ( tool_select_tp ( vtl, &params ) )
+  {
+    trw_layer_split_at_selected_trackpoint ( vtl, vtl->current_tp_track->is_route ? VIK_TRW_LAYER_SUBLAYER_ROUTE : VIK_TRW_LAYER_SUBLAYER_TRACK );
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
