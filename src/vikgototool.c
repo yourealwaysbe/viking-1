@@ -307,7 +307,14 @@ int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport
   }
 
 done:
-  (void)util_remove(tmpname);
+  g_debug("Candidates:");
+  GList *l;
+  for (l = candidates; l != NULL; l = l->next)
+  {
+    struct VikGotoCandidate *cand = (struct VikGotoCandidate*)l->data;
+    g_debug("%s %f %f", cand->description, cand->ll.lat, cand->ll.lon);
+  }
+  //(void)util_remove(tmpname);
 done_no_file:
   g_free(tmpname);
   g_free(escaped_srch_str);
