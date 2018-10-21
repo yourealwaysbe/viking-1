@@ -242,6 +242,7 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
   VikCoord new_center;
   gchar *s_str;
   gboolean more = TRUE;
+  GList *candidates;
 
   if (goto_tools_list == NULL)
   {
@@ -250,13 +251,17 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
     return;
   }
 
+  candidates = g_list_alloc();
+
   do {
     s_str = a_prompt_for_goto_string(vw);
     if ((!s_str) || (s_str[0] == 0)) {
       more = FALSE;
     }
     else {
-      int ans = vik_goto_tool_get_coord(g_list_nth_data (goto_tools_list, last_goto_tool), vw, vvp, s_str, &new_center);
+      VikGotoTool *tool = g_list_nth_data(goto_tools_list, last_goto_tool);
+      int ans = vik_goto_tool_get_candidates(tool, vw, vvp, s_str, candidates);
+      ans = vik_goto_tool_get_coord(tool, vw, vvp, s_str, &new_center);
       if ( ans == 0 ) {
         if (last_coord)
           g_free(last_coord);
@@ -277,6 +282,8 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
     }
     g_free(s_str);
   } while (more);
+
+  g_list_free(candidates);
 }
 
 #define JSON_LATITUDE_PATTERN "\"geoplugin_latitude\":\""

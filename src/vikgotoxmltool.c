@@ -40,7 +40,9 @@
 static void vik_goto_xml_tool_finalize ( GObject *gob );
 
 static gchar *vik_goto_xml_tool_get_url_format ( VikGotoTool *self );
+static gboolean vik_goto_xml_tool_parse_file(VikGotoTool *self, gchar *filename);
 static gboolean vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, struct LatLon *ll);
+static gboolean vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList *ll);
 
 typedef struct _VikGotoXmlToolPrivate VikGotoXmlToolPrivate;
 
@@ -53,6 +55,9 @@ struct _VikGotoXmlToolPrivate
   gchar *lon_attr;
   
   struct LatLon ll;
+
+  // if not null, load in all candidates
+  GList *candidates;
 };
 
 #define GOTO_XML_TOOL_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), \
@@ -247,6 +252,7 @@ vik_goto_xml_tool_class_init ( VikGotoXmlToolClass *klass )
 
   parent_class->get_url_format = vik_goto_xml_tool_get_url_format;
   parent_class->parse_file_for_latlon = vik_goto_xml_tool_parse_file_for_latlon;
+  parent_class->parse_file_for_candidates = vik_goto_xml_tool_parse_file_for_candidates;
 
   g_type_class_add_private (klass, sizeof (VikGotoXmlToolPrivate));
 }
@@ -355,6 +361,8 @@ _text (GMarkupParseContext *context,
        gpointer             user_data,
        GError             **error)
 {
+  // MATT TODO: figure out file format and add candidates here if
+  // priv->candidates is not null
   VikGotoXmlTool *self = VIK_GOTO_XML_TOOL (user_data);
   VikGotoXmlToolPrivate *priv = GOTO_XML_TOOL_GET_PRIVATE (self);
   const GSList *stack = g_markup_parse_context_get_element_stack (context);
@@ -372,7 +380,7 @@ _text (GMarkupParseContext *context,
 }
 
 static gboolean
-vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, struct LatLon *ll)
+vik_goto_xml_tool_parse_file(VikGotoTool *self, gchar *filename)
 {
 	GMarkupParser xml_parser;
 	GMarkupParseContext *xml_context = NULL;
@@ -437,16 +445,36 @@ vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, stru
 	xml_context = NULL;
 	fclose (file);
   
+    return TRUE;
+}
+
+static gboolean
+vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, struct LatLon *ll)
+{
+  if (!vik_goto_xml_tool_parse_file(self, filename))
+    return FALSE;
+
+  VikGotoXmlToolPrivate *priv = GOTO_XML_TOOL_GET_PRIVATE (self);
+
   if (ll != NULL)
   {
     *ll = priv->ll;
   }
   
   if (isnan(priv->ll.lat) || isnan(priv->ll.lat))
-		/* At least one coordinate not found */
-		return FALSE;
-	else
-		return TRUE;
+    /* At least one coordinate not found */
+    return FALSE;
+  else
+    return TRUE;
+}
+
+static gboolean
+vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList *candidates)
+{
+  VikGotoXmlToolPrivate *priv = GOTO_XML_TOOL_GET_PRIVATE (self);
+  priv->candidates = candidates;
+
+  return vik_goto_xml_tool_parse_file(self, filename);
 }
 
 static gchar *
