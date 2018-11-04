@@ -125,7 +125,7 @@ typedef enum {
 } font_size_t;
 
 typedef enum {
-  VIK_TRW_LAYER_INTERNAL,
+  VIK_TRW_LAYER_INTERNAL = 0,
   VIK_TRW_LAYER_EXTERNAL,
   VIK_TRW_LAYER_EXTERNAL_NO_WRITE,
   VIK_EXTERNAL_TYPE_LAST
@@ -777,8 +777,8 @@ static gboolean trw_layer_sublayer_toggle_visible ( VikTrwLayer *l, gint subtype
 static const gchar* trw_layer_layer_tooltip ( VikTrwLayer *vtl );
 static const gchar* trw_layer_sublayer_tooltip ( VikTrwLayer *l, gint subtype, gpointer sublayer );
 static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer sublayer, gint type, gpointer vlp );
-static void trw_layer_marshall ( VikTrwLayer *vtl, guint8 **data, gint *len );
-static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, gint len, VikViewport *vvp );
+static void trw_layer_marshall ( VikTrwLayer *vtl, guint8 **data, guint *len );
+static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, guint len, VikViewport *vvp );
 static gboolean trw_layer_set_param ( VikTrwLayer *vtl, VikLayerSetParam *vlsp );
 static VikLayerParamData trw_layer_get_param ( VikTrwLayer *vtl, guint16 id, gboolean is_file_operation );
 static void trw_layer_change_param ( GtkWidget *widget, ui_change_values values );
@@ -1556,10 +1556,10 @@ static void trw_layer_change_param ( GtkWidget *widget, ui_change_values values 
   }
 }
 
-static void trw_layer_marshall( VikTrwLayer *vtl, guint8 **data, gint *len )
+static void trw_layer_marshall( VikTrwLayer *vtl, guint8 **data, guint *len )
 {
   guint8 *pd;
-  gint pl;
+  guint pl;
 
   *data = NULL;
 
@@ -1623,11 +1623,11 @@ static void trw_layer_marshall( VikTrwLayer *vtl, guint8 **data, gint *len )
   *len = ba->len;
 }
 
-static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, gint len, VikViewport *vvp )
+static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, guint len, VikViewport *vvp )
 {
   VikTrwLayer *vtl = VIK_TRW_LAYER(vik_layer_create ( VIK_LAYER_TRW, vvp, FALSE ));
-  gint pl;
-  gint consumed_length;
+  guint pl;
+  guint consumed_length;
   guint8 *data = (guint8*)data_in;
 
   // First the overall layer parameters
@@ -1637,9 +1637,9 @@ static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, gint len, VikV
   data += pl;
 
   consumed_length = pl;
-  const gint sizeof_len_and_subtype = sizeof(gint) + sizeof(gint);
+  const guint sizeof_len_and_subtype = sizeof(guint) + sizeof(guint);
 
-#define tlm_size (*(gint *)data)
+#define tlm_size (*(guint *)data)
   // See marshalling above for order of how this is written
 
   // Now the individual sublayers:
@@ -1650,7 +1650,7 @@ static VikTrwLayer *trw_layer_unmarshall ( const guint8 *data_in, gint len, VikV
     if ( consumed_length + tlm_size < len ) {
 
       // Reuse pl to read the subtype from the data stream
-      memcpy(&pl, data+sizeof(gint), sizeof(pl));
+      memcpy(&pl, data+sizeof(guint), sizeof(pl));
 
       // Also remember to (attempt to) convert each coordinate in case this is pasted into a different drawmode
       if ( pl == VIK_TRW_LAYER_SUBLAYER_TRACK ) {
@@ -2449,7 +2449,7 @@ static void trw_layer_draw_track ( const gpointer id, VikTrack *track, struct Dr
 	    /*
 	     * If points are the same in display coordinates, don't draw.
 	     */
-	    if ( x != oldx && y != oldy )
+	    if ( x != oldx || y != oldy )
 	      {
 		vik_viewport_coord_to_screen ( dp->vp, &(tp2->coord), &x, &y );
 		draw_utm_skip_insignia ( dp->vp, main_gc, x, y );
@@ -6121,7 +6121,7 @@ static gint trackpoint_compare(gconstpointer a, gconstpointer b)
 /**
  * comparison function which can be used to sort tracks or waypoints by name
  */
-static gint sort_alphabetically (gconstpointer a, gconstpointer b, gpointer user_data)
+static gint sort_alphabetically (gconstpointer a, gconstpointer b)
 {
   const gchar* namea = (const gchar*) a;
   const gchar* nameb = (const gchar*) b;
@@ -6183,7 +6183,7 @@ static void trw_layer_merge_with_other ( menu_array_sublayer values )
     iter = g_list_next ( iter );
   }
 
-  other_tracks_names = g_list_sort_with_data (other_tracks_names, sort_alphabetically, NULL);
+  other_tracks_names = g_list_sort (other_tracks_names, sort_alphabetically);
 
   GList *merge_list = a_dialog_select_from_list(VIK_GTK_WINDOW_FROM_LAYER(vtl),
                                                 other_tracks_names,
@@ -6232,7 +6232,7 @@ static void trw_layer_sorted_track_id_by_name_list_exclude_self (const gpointer 
   }
 
   // Sort named list alphabetically
-  *(user_data->result) = g_list_insert_sorted_with_data (*(user_data->result), trk->name, sort_alphabetically, NULL);
+  *(user_data->result) = g_list_insert_sorted (*(user_data->result), trk->name, sort_alphabetically);
 }
 
 /**
@@ -7151,7 +7151,7 @@ static void trw_layer_sorted_name_list(gpointer key, gpointer value, gpointer ud
   GList **list = (GList**)udata;
   // *list = g_list_prepend(*all, key); //unsorted method
   // Sort named list alphabetically
-  *list = g_list_insert_sorted_with_data (*list, key, sort_alphabetically, NULL);
+  *list = g_list_insert_sorted (*list, key, sort_alphabetically);
 }
 */
 
@@ -7162,7 +7162,7 @@ static void trw_layer_sorted_wp_id_by_name_list (const gpointer id, const VikWay
 {
   GList **list = (GList**)udata;
   // Sort named list alphabetically
-  *list = g_list_insert_sorted_with_data (*list, wp->name, sort_alphabetically, NULL);
+  *list = g_list_insert_sorted (*list, wp->name, sort_alphabetically);
 }
 
 /**
@@ -7172,7 +7172,7 @@ static void trw_layer_sorted_track_id_by_name_list (const gpointer id, const Vik
 {
   GList **list = (GList**)udata;
   // Sort named list alphabetically
-  *list = g_list_insert_sorted_with_data (*list, trk->name, sort_alphabetically, NULL);
+  *list = g_list_insert_sorted (*list, trk->name, sort_alphabetically);
 }
 
 
@@ -7603,7 +7603,7 @@ static void trw_layer_delete_waypoints_from_selection ( menu_array_layer values 
     return;
   }
 
-  all = g_list_sort_with_data(all, sort_alphabetically, NULL);
+  all = g_list_sort(all, sort_alphabetically);
 
   // Get list of items to delete from the user
   GList *delete_list = a_dialog_select_from_list(VIK_GTK_WINDOW_FROM_LAYER(vtl),
@@ -9133,7 +9133,7 @@ static void trw_layer_cancel_current_tp ( VikTrwLayer *vtl, gboolean destroy )
   {
     if ( destroy)
     {
-      gtk_widget_destroy ( GTK_WIDGET(vtl->tpwin) );
+      vik_trw_layer_tpwin_destroy ( vtl->tpwin );
       vtl->tpwin = NULL;
     }
     else
@@ -9851,9 +9851,8 @@ static void marker_end_move ( tool_ed_t *t )
 
 static gpointer tool_edit_waypoint_create ( VikWindow *vw, VikViewport *vvp)
 {
-  tool_ed_t *t = g_new(tool_ed_t, 1);
+  tool_ed_t *t = g_new0(tool_ed_t, 1);
   t->vvp = vvp;
-  t->holding = FALSE;
   return t;
 }
 
@@ -10356,7 +10355,7 @@ static VikLayerToolFuncStatus tool_edit_track_move ( VikTrwLayer *vtl, GdkEventM
       g_free (str);
     }
 
-    passalong = g_new(draw_sync_t,1); // freed by draw_sync()
+    passalong = g_new0(draw_sync_t,1); // freed by draw_sync()
     passalong->vtl = vtl;
     passalong->pixmap = pixmap;
     passalong->drawable = gtk_widget_get_window(GTK_WIDGET(vvp));
@@ -10708,9 +10707,8 @@ static gboolean tool_new_waypoint_click ( VikTrwLayer *vtl, GdkEventButton *even
 
 static gpointer tool_edit_trackpoint_create ( VikWindow *vw, VikViewport *vvp)
 {
-  tool_ed_t *t = g_new(tool_ed_t, 1);
+  tool_ed_t *t = g_new0(tool_ed_t, 1);
   t->vvp = vvp;
-  t->holding = FALSE;
   return t;
 }
 

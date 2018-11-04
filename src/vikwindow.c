@@ -1763,11 +1763,9 @@ typedef struct {
 
 static gpointer ruler_create (VikWindow *vw, VikViewport *vvp) 
 {
-  ruler_tool_state_t *s = g_new(ruler_tool_state_t, 1);
+  ruler_tool_state_t *s = g_new0(ruler_tool_state_t, 1);
   s->vw = vw;
   s->vvp = vvp;
-  s->has_oldcoord = FALSE;
-  s->displayed = FALSE;
   return s;
 }
 
@@ -2928,9 +2926,7 @@ static void view_side_panel_buttons_cb ( GtkAction *a, VikWindow *vw )
 
 static toolbox_tools_t* toolbox_create(VikWindow *vw)
 {
-  toolbox_tools_t *vt = g_new(toolbox_tools_t, 1);
-  vt->tools = NULL;
-  vt->n_tools = 0;
+  toolbox_tools_t *vt = g_new0(toolbox_tools_t, 1);
   vt->active_tool = -1;
   vt->vw = vw;
   return vt;
@@ -4230,10 +4226,12 @@ typedef enum {
   VW_GEN_KMZ_FILE,
 } img_generation_t;
 
+#define VIK_SETTINGS_KMZ_DEFAULT_MAPS_DIR "kmz_default_maps_dir"
+
 /*
  * Get an allocated filename (or directory as specified)
  */
-static gchar* draw_image_filename ( VikWindow *vw, img_generation_t img_gen )
+static gchar* draw_image_filename ( VikWindow *vw, img_generation_t img_gen, gdouble zoom )
 {
   gchar *fn = NULL;
   if ( img_gen != VW_GEN_DIRECTORY_OF_IMAGES )
@@ -4256,30 +4254,43 @@ static gchar* draw_image_filename ( VikWindow *vw, img_generation_t img_gen )
     gtk_file_filter_add_pattern ( filter, "*" );
     gtk_file_chooser_add_filter ( chooser, filter );
 
+    filter = gtk_file_filter_new ();
+    gchar *extension = NULL;
+
     if ( img_gen == VW_GEN_KMZ_FILE ) {
-      filter = gtk_file_filter_new ();
       gtk_file_filter_set_name ( filter, _("KMZ") );
       gtk_file_filter_add_mime_type ( filter, "vnd.google-earth.kmz");
       gtk_file_filter_add_pattern ( filter, "*.kmz" );
       gtk_file_chooser_add_filter ( chooser, filter );
-      gtk_file_chooser_set_filter ( chooser, filter );
+      extension = "kmz";
     }
     else {
-      filter = gtk_file_filter_new ();
-      gtk_file_filter_set_name ( filter, _("JPG") );
-      gtk_file_filter_add_mime_type ( filter, "image/jpeg");
-      gtk_file_chooser_add_filter ( chooser, filter );
+      if ( vw->draw_image_save_as_png ) {
+        gtk_file_filter_set_name ( filter, _("PNG") );
+        gtk_file_filter_add_mime_type ( filter, "image/png");
+        gtk_file_chooser_add_filter ( chooser, filter );
+        extension = "png";
+      } else {
+        gtk_file_filter_set_name ( filter, _("JPG") );
+        gtk_file_filter_add_mime_type ( filter, "image/jpeg");
+        gtk_file_chooser_add_filter ( chooser, filter );
+        extension = "jpg";
+      }
+    }
+    gtk_file_chooser_set_filter ( chooser, filter );
 
-      if ( !vw->draw_image_save_as_png )
-        gtk_file_chooser_set_filter ( chooser, filter );
+    // Autogenerate a name
+    // Read from settings for the directory
+    gchar *save_dir = NULL;
+    (void)a_settings_get_string ( VIK_SETTINGS_KMZ_DEFAULT_MAPS_DIR, &save_dir );
+    if ( save_dir )
+       (void)gtk_file_chooser_set_current_folder ( chooser, save_dir );
 
-      filter = gtk_file_filter_new ();
-      gtk_file_filter_set_name ( filter, _("PNG") );
-      gtk_file_filter_add_mime_type ( filter, "image/png");
-      gtk_file_chooser_add_filter ( chooser, filter );
-
-      if ( vw->draw_image_save_as_png )
-        gtk_file_chooser_set_filter ( chooser, filter );
+    const VikCoord *vc = vik_viewport_get_center ( vw->viking_vvp );
+    if ( vc->mode == VIK_COORD_LATLON ) {
+      gchar *fname = g_strdup_printf ( "%.3f_%.3f_%d.%s", vc->north_south, vc->east_west, (gint)zoom, extension );
+      gtk_file_chooser_set_current_name ( chooser, fname );
+      g_free ( fname );
     }
 
     gtk_window_set_transient_for ( GTK_WINDOW(dialog), GTK_WINDOW(vw) );
@@ -4432,21 +4443,23 @@ static void draw_to_image_file ( VikWindow *vw, img_generation_t img_gen )
   {
     gtk_widget_hide ( GTK_WIDGET(dialog) );
 
-    gchar *fn = draw_image_filename ( vw, img_gen );
-    if ( !fn )
-      return;
-
     gint active_z = gtk_combo_box_get_active ( GTK_COMBO_BOX(zoom_combo) );
     gdouble zoom = pow (2, active_z-2 );
 
-    if ( img_gen == VW_GEN_SINGLE_IMAGE )
+    vw->draw_image_save_as_png = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(png_radio) );
+
+    gchar *fn = draw_image_filename ( vw, img_gen, zoom );
+    if ( !fn )
+      return;
+
+    if ( img_gen == VW_GEN_SINGLE_IMAGE ) {
       save_image_file ( vw, fn, 
                       vw->draw_image_width = gtk_spin_button_get_value_as_int ( GTK_SPIN_BUTTON(width_spin) ),
                       vw->draw_image_height = gtk_spin_button_get_value_as_int ( GTK_SPIN_BUTTON(height_spin) ),
                       zoom,
-                      vw->draw_image_save_as_png = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(png_radio) ),
+                      vw->draw_image_save_as_png,
                       FALSE );
-    else if ( img_gen == VW_GEN_KMZ_FILE ) {
+     } else if ( img_gen == VW_GEN_KMZ_FILE ) {
       // Remove some viewport overlays as these aren't useful in KMZ file.
       gboolean restore_xhair = vik_viewport_get_draw_centermark ( vw->viking_vvp );
       if ( restore_xhair )
@@ -4486,6 +4499,17 @@ static void draw_to_image_file ( VikWindow *vw, img_generation_t img_gen )
   gtk_widget_destroy ( GTK_WIDGET(dialog) );
 }
 
+static void draw_to_image_file_cb ( GtkAction *a, VikWindow *vw )
+{
+  draw_to_image_file ( vw, VW_GEN_SINGLE_IMAGE );
+}
+
+static void draw_to_image_dir_cb ( GtkAction *a, VikWindow *vw )
+{
+  draw_to_image_file ( vw, VW_GEN_DIRECTORY_OF_IMAGES );
+}
+
+#ifdef HAVE_ZIP_H
 static void draw_to_kmz_file_cb ( GtkAction *a, VikWindow *vw )
 {
   if ( vik_viewport_get_coord_mode(vw->viking_vvp) == VIK_COORD_UTM ) {
@@ -4495,16 +4519,6 @@ static void draw_to_kmz_file_cb ( GtkAction *a, VikWindow *vw )
   // NB ATM This only generates a KMZ file with the current viewport image - intended mostly for map images [but will include any lines/icons from track & waypoints that are drawn]
   // (it does *not* include a full KML dump of every track, waypoint etc...)
   draw_to_image_file ( vw, VW_GEN_KMZ_FILE );
-}
-
-static void draw_to_image_file_cb ( GtkAction *a, VikWindow *vw )
-{
-  draw_to_image_file ( vw, VW_GEN_SINGLE_IMAGE );
-}
-
-static void draw_to_image_dir_cb ( GtkAction *a, VikWindow *vw )
-{
-  draw_to_image_file ( vw, VW_GEN_DIRECTORY_OF_IMAGES );
 }
 
 /**
@@ -4525,14 +4539,13 @@ static void import_kmz_file_cb ( GtkAction *a, VikWindow *vw )
   gtk_file_filter_add_mime_type ( filter, "vnd.google-earth.kmz");
   gtk_file_filter_add_pattern ( filter, "*.kmz" );
   gtk_file_chooser_add_filter ( GTK_FILE_CHOOSER(dialog), filter );
+  // Default filter to KMZ type
   gtk_file_chooser_set_filter ( GTK_FILE_CHOOSER(dialog), filter );
 
   filter = gtk_file_filter_new ();
   gtk_file_filter_set_name( filter, _("All") );
   gtk_file_filter_add_pattern ( filter, "*" );
   gtk_file_chooser_add_filter ( GTK_FILE_CHOOSER(dialog), filter );
-  // Default to any file - same as before open filters were added
-  gtk_file_chooser_set_filter ( GTK_FILE_CHOOSER(dialog), filter );
 
   if ( gtk_dialog_run ( GTK_DIALOG(dialog) ) == GTK_RESPONSE_ACCEPT )  {
     gchar *fn = gtk_file_chooser_get_filename ( GTK_FILE_CHOOSER(dialog) );
@@ -4545,6 +4558,7 @@ static void import_kmz_file_cb ( GtkAction *a, VikWindow *vw )
   }
   gtk_widget_destroy ( dialog );
 }
+#endif
 
 static void print_cb ( GtkAction *a, VikWindow *vw )
 {

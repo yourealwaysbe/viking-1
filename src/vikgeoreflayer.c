@@ -70,8 +70,8 @@ enum {
   NUM_PARAMS };
 
 static const gchar* georef_layer_tooltip ( VikGeorefLayer *vgl );
-static void georef_layer_marshall( VikGeorefLayer *vgl, guint8 **data, gint *len );
-static VikGeorefLayer *georef_layer_unmarshall( guint8 *data, gint len, VikViewport *vvp );
+static void georef_layer_marshall( VikGeorefLayer *vgl, guint8 **data, guint *len );
+static VikGeorefLayer *georef_layer_unmarshall( guint8 *data, guint len, VikViewport *vvp );
 static gboolean georef_layer_set_param ( VikGeorefLayer *vgl, VikLayerSetParam *vlsp );
 static VikLayerParamData georef_layer_get_param ( VikGeorefLayer *vgl, guint16 id, gboolean is_file_operation );
 static VikGeorefLayer *georef_layer_new ( VikViewport *vvp );
@@ -251,12 +251,12 @@ static const gchar* georef_layer_tooltip ( VikGeorefLayer *vgl )
   return vgl->image;
 }
 
-static void georef_layer_marshall( VikGeorefLayer *vgl, guint8 **data, gint *len )
+static void georef_layer_marshall( VikGeorefLayer *vgl, guint8 **data, guint *len )
 {
   vik_layer_marshall_params ( VIK_LAYER(vgl), data, len );
 }
 
-static VikGeorefLayer *georef_layer_unmarshall( guint8 *data, gint len, VikViewport *vvp )
+static VikGeorefLayer *georef_layer_unmarshall( guint8 *data, guint len, VikViewport *vvp )
 {
   VikGeorefLayer *rv = georef_layer_new ( vvp );
   vik_layer_unmarshall_params ( VIK_LAYER(rv), data, len, vvp );
@@ -376,6 +376,7 @@ static void georef_layer_mpp_from_coords ( VikCoordMode mode, struct LatLon ll_t
   ll_bl.lat = ll_br.lat;
   ll_bl.lon = ll_tl.lon;
 
+  gdouble diffx;
   // UTM mode should be exact MPP
   gdouble factor = 1.0;
   if ( mode == VIK_COORD_LATLON ) {
@@ -387,9 +388,23 @@ static void georef_layer_mpp_from_coords ( VikCoordMode mode, struct LatLon ll_t
     // Protect against div by zero (but shouldn't have 90 degrees for mid latitude...)
     if ( fabs(mid_lat) < 89.9 )
       factor = cos(DEG2RAD(mid_lat)) * 1.193;
+
+    // Work out the xmpp in a relationship to the centre of the coords
+    // Consider an area with a large difference in latitude, it will have differing factors
+    // Thus an average factor at the centre will have less distortion.
+    struct LatLon ll_ml;
+    ll_ml.lat = mid_lat;
+    ll_ml.lon = ll_tl.lon;
+
+    struct LatLon ll_mr;
+    ll_mr.lat = mid_lat;
+    ll_mr.lon = ll_tr.lon;
+
+    diffx = a_coords_latlon_diff ( &ll_ml, &ll_mr );
+  } else {
+    diffx = a_coords_latlon_diff ( &ll_tl, &ll_tr );
   }
 
-  gdouble diffx = a_coords_latlon_diff ( &ll_tl, &ll_tr );
   *xmpp = (diffx / width) / factor;
 
   gdouble diffy = a_coords_latlon_diff ( &ll_tl, &ll_bl );
@@ -418,6 +433,10 @@ static void georef_layer_draw ( VikGeorefLayer *vgl, VikViewport *vp )
       scale = TRUE;
       layer_width = round(vgl->width * vgl->mpp_easting / xmpp);
       layer_height = round(vgl->height * vgl->mpp_northing / ympp);
+
+      // Has the scaling worked?
+      if ( layer_width == 0 || layer_height == 0 )
+	return;
     }
 
     // If image not in viewport bounds - no need to draw it (or bother with any scaling)
@@ -452,10 +471,12 @@ static void georef_layer_draw ( VikGeorefLayer *vgl, VikViewport *vp )
 
 static void georef_layer_free ( VikGeorefLayer *vgl )
 {
-  if ( vgl->image != NULL )
+  if ( vgl->image )
     g_free ( vgl->image );
-  if ( vgl->scaled != NULL )
+  if ( vgl->scaled )
     g_object_unref ( vgl->scaled );
+  if ( vgl->pixbuf )
+    g_object_unref ( vgl->pixbuf );
 }
 
 static VikGeorefLayer *georef_layer_create ( VikViewport *vp )
@@ -1133,7 +1154,10 @@ static void goto_center_ll ( VikViewport *vp,
 }
 
 /**
+ * vik_georef_layer_create:
  *
+ * @name:   Name for the Georef layer. This string is copied.
+ * @pixbuf: Pixbuf becomes owned by the Georef layer and will manage the freeing of it
  */
 VikGeorefLayer *vik_georef_layer_create ( VikViewport *vp,
                                           VikLayersPanel *vlp,
