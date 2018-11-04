@@ -211,6 +211,8 @@ void osm_init () {
     "lat-attr", "lat",
     "lon-path", "/searchresults/place",
     "lon-attr", "lon",
+    "desc-path", "/searchresults/place",
+    "desc-attr", "display_name",
     NULL ) );
     vik_goto_register ( VIK_GOTO_TOOL ( nominatim ) );
     g_object_unref ( nominatim );
@@ -221,6 +223,8 @@ void osm_init () {
     "lat-attr", "lat",
     "lon-path", "/searchresults/named",
     "lon-attr", "lon",
+    "desc-path", "/searchresults/named",
+    "desc-attr", "display_name",
     NULL ) );
     vik_goto_register ( VIK_GOTO_TOOL ( namefinder ) );
     g_object_unref ( namefinder );

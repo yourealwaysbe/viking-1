@@ -204,7 +204,7 @@ gboolean vik_goto_tool_parse_file_for_latlon (VikGotoTool *self, gchar *filename
   return VIK_GOTO_TOOL_GET_CLASS( self )->parse_file_for_latlon( self, filename, ll );
 }
 
-gboolean vik_goto_tool_parse_file_for_candidates (VikGotoTool *self, gchar *filename, GList *candidates)
+gboolean vik_goto_tool_parse_file_for_candidates (VikGotoTool *self, gchar *filename, GList **candidates)
 {
   return VIK_GOTO_TOOL_GET_CLASS( self )->parse_file_for_candidates( self, filename, candidates );
 }
@@ -277,7 +277,7 @@ done_no_file:
  *  1  = search unavailable in the #VikGotoTool due to communication issue
  *
  */
-int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport *vvp, gchar *srch_str, GList *candidates )
+int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport *vvp, gchar *srch_str, GList **candidates )
 {
   gchar *tmpname;
   gchar *uri;
@@ -307,13 +307,18 @@ int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport
   }
 
 done:
-  g_debug("Candidates:");
+  g_debug("Candidates: %d", *candidates);
   GList *l;
-  for (l = candidates; l != NULL; l = l->next)
+  for (l = *candidates; l != NULL; l = l->next)
   {
+    g_debug("A trying");
     struct VikGotoCandidate *cand = (struct VikGotoCandidate*)l->data;
-    g_debug("%s %f %f", cand->description, cand->ll.lat, cand->ll.lon);
+    g_debug("Ptr: %d", cand);
+    g_debug("Desc: %s", cand->description);
+    g_debug("Lat: %f", cand->ll.lat);
+    g_debug("Lon: %f", cand->ll.lon);
   }
+  // MATT TODO: unlink
   //(void)util_remove(tmpname);
 done_no_file:
   g_free(tmpname);

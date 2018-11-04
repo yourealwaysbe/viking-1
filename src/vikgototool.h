@@ -65,7 +65,7 @@ gchar *vik_goto_tool_get_url_format ( VikGotoTool *self );
 DownloadFileOptions *vik_goto_tool_get_download_options ( VikGotoTool *self );
 gboolean vik_goto_tool_parse_file_for_latlon ( VikGotoTool *self, gchar *filename, struct LatLon *ll );
 int vik_goto_tool_get_coord ( VikGotoTool *self, VikWindow *vw, VikViewport *vvp, gchar *srch_str, VikCoord *coord );
-int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport *vvp, gchar *srch_str, GList *candidates );
+int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport *vvp, gchar *srch_str, GList **candidates );
 void vik_goto_tool_free_candidate ( struct VikGotoCandidate *candidate );
 
 G_END_DECLS

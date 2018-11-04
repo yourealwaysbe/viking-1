@@ -251,7 +251,7 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
     return;
   }
 
-  candidates = g_list_alloc();
+  candidates = NULL;
 
   do {
     s_str = a_prompt_for_goto_string(vw);
@@ -261,7 +261,7 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
     else {
       VikGotoTool *tool = g_list_nth_data(goto_tools_list, last_goto_tool);
       // MATT TODO: something with candidates
-      int ans = vik_goto_tool_get_candidates(tool, vw, vvp, s_str, candidates);
+      int ans = vik_goto_tool_get_candidates(tool, vw, vvp, s_str, &candidates);
       ans = vik_goto_tool_get_coord(tool, vw, vvp, s_str, &new_center);
       if ( ans == 0 ) {
         if (last_coord)

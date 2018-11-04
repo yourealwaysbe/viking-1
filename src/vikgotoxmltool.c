@@ -42,7 +42,7 @@ static void vik_goto_xml_tool_finalize ( GObject *gob );
 static gchar *vik_goto_xml_tool_get_url_format ( VikGotoTool *self );
 static gboolean vik_goto_xml_tool_parse_file(VikGotoTool *self, gchar *filename);
 static gboolean vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, struct LatLon *ll);
-static gboolean vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList *ll);
+static gboolean vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList **candidates);
 
 typedef struct _VikGotoXmlToolPrivate VikGotoXmlToolPrivate;
 
@@ -60,7 +60,7 @@ struct _VikGotoXmlToolPrivate
   gchar *description;
 
   // if not null, load in all candidates
-  GList *candidates;
+  GList **candidates;
 };
 
 #define GOTO_XML_TOOL_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), \
@@ -152,7 +152,7 @@ vik_goto_xml_tool_set_property (GObject      *object,
     case PROP_DESC_PATH:
       splitted = g_strsplit (g_value_get_string (value), "@", 2);
       g_free (priv->desc_path);
-      priv->lat_path = splitted[0];
+      priv->desc_path = splitted[0];
       if (splitted[1])
       {
         g_object_set (object, "desc-attr", splitted[1], NULL);
@@ -375,18 +375,22 @@ stack_is_path (const GSList *stack,
 /* If a complete entry has been found and we want to get all candidates,
  * then move it to the candidate list */
 static void
-vik_goto_xml_tool_process_if_complete(VikGotoXmlToolPrivate priv)
+vik_goto_xml_tool_process_if_complete(VikGotoXmlToolPrivate *priv)
 {
     if(!isnan(priv->ll.lon) &&
        !isnan(priv->ll.lat) &&
-       priv-description != NULL &&
+       priv->description != NULL &&
        priv->candidates != NULL)
     {
-        VikGotoCandidate *cand = g_malloc0(sizeof(VikGotoCandidate));
+        struct VikGotoCandidate *cand = g_malloc(sizeof(struct VikGotoCandidate));
         cand->ll.lon = priv->ll.lon;
         cand->ll.lat = priv->ll.lat;
         cand->description = priv->description;
-        g_list_prepend(priv->candidates, cand);
+        g_debug("Try: %d", *priv->candidates);
+        *priv->candidates = g_list_prepend(*priv->candidates, cand);
+        g_debug("To: %d", *priv->candidates);
+
+        g_debug("Prepended: %s", priv->description);
 
         priv->ll.lon = NAN;
         priv->ll.lat = NAN;
@@ -433,7 +437,7 @@ _start_element (GMarkupParseContext *context,
 		}
 	}
   /* Description */
-  if (priv->desc_attr != NULL && priv->description != NULL && stack_is_path (stack, priv->desc_path))
+  if (priv->desc_attr != NULL && priv->description == NULL && stack_is_path (stack, priv->desc_path))
 	{
 		int i=0;
 		while (attribute_names[i] != NULL)
@@ -490,10 +494,11 @@ vik_goto_xml_tool_parse_file(VikGotoTool *self, gchar *filename)
 	VikGotoXmlToolPrivate *priv = GOTO_XML_TOOL_GET_PRIVATE (self);
   g_return_val_if_fail(priv != NULL, FALSE);
 
-  g_debug ("%s: %s@%s, %s@%s",
+  g_debug ("%s: %s@%s, %s@%s, %s@%s",
            __FUNCTION__,
            priv->lat_path, priv->lat_attr,
-           priv->lon_path, priv->lon_attr);
+           priv->lon_path, priv->lon_attr,
+           priv->desc_path, priv->desc_attr);
 
 	FILE *file = g_fopen (filename, "r");
 	if (file == NULL)
@@ -571,7 +576,7 @@ vik_goto_xml_tool_parse_file_for_latlon(VikGotoTool *self, gchar *filename, stru
 }
 
 static gboolean
-vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList *candidates)
+vik_goto_xml_tool_parse_file_for_candidates(VikGotoTool *self, gchar *filename, GList **candidates)
 {
   VikGotoXmlToolPrivate *priv = GOTO_XML_TOOL_GET_PRIVATE (self);
   priv->candidates = candidates;
