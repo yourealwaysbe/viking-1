@@ -307,17 +307,6 @@ int vik_goto_tool_get_candidates ( VikGotoTool *self, VikWindow *vw, VikViewport
   }
 
 done:
-  g_debug("Candidates: %d", *candidates);
-  GList *l;
-  for (l = *candidates; l != NULL; l = l->next)
-  {
-    g_debug("A trying");
-    struct VikGotoCandidate *cand = (struct VikGotoCandidate*)l->data;
-    g_debug("Ptr: %d", cand);
-    g_debug("Desc: %s", cand->description);
-    g_debug("Lat: %f", cand->ll.lat);
-    g_debug("Lon: %f", cand->ll.lon);
-  }
   // MATT TODO: unlink
   //(void)util_remove(tmpname);
 done_no_file:

@@ -386,11 +386,7 @@ vik_goto_xml_tool_process_if_complete(VikGotoXmlToolPrivate *priv)
         cand->ll.lon = priv->ll.lon;
         cand->ll.lat = priv->ll.lat;
         cand->description = priv->description;
-        g_debug("Try: %d", *priv->candidates);
         *priv->candidates = g_list_prepend(*priv->candidates, cand);
-        g_debug("To: %d", *priv->candidates);
-
-        g_debug("Prepended: %s", priv->description);
 
         priv->ll.lon = NAN;
         priv->ll.lat = NAN;

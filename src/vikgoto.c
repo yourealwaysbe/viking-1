@@ -49,6 +49,22 @@ static GList *goto_tools_list = NULL;
 #define VIK_SETTINGS_GOTO_PROVIDER "goto_provider"
 int last_goto_tool = -1;
 
+struct VikGotoSearchWinData {
+  VikWindow *vw;
+  VikViewport * vvp;
+  GtkWidget *dialog;
+  GtkEntry *goto_entry;
+  GtkWidget *tool_list;
+  GtkTreeView *results_view;
+};
+
+static enum {
+  VIK_GOTO_SEARCH_DESC_COL = 0,
+  VIK_GOTO_SEARCH_LAT_COL,
+  VIK_GOTO_SEARCH_LON_COL,
+  VIK_GOTO_SEARCH_NUM_COLS
+};
+
 void vik_goto_register ( VikGotoTool *tool )
 {
   if ( IS_VIK_GOTO_TOOL( tool ) )
@@ -83,26 +99,6 @@ static void display_no_tool(VikWindow *vw)
   gtk_dialog_run ( GTK_DIALOG(dialog) );
 
   gtk_widget_destroy(dialog);
-}
-
-static gboolean prompt_try_again(VikWindow *vw, const gchar *msg)
-{
-  GtkWidget *dialog = NULL;
-  gboolean ret = TRUE;
-
-  dialog = gtk_dialog_new_with_buttons ( "", GTK_WINDOW(vw), 0, GTK_STOCK_OK, GTK_RESPONSE_ACCEPT, GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT, NULL );
-  gtk_window_set_title(GTK_WINDOW(dialog), _("goto"));
-
-  GtkWidget *goto_label = gtk_label_new(msg);
-  gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), goto_label, FALSE, FALSE, 5 );
-  gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
-  gtk_widget_show_all(dialog);
-
-  if ( gtk_dialog_run ( GTK_DIALOG(dialog) ) != GTK_RESPONSE_ACCEPT )
-    ret = FALSE;
-
-  gtk_widget_destroy(dialog);
-  return ret;
 }
 
 static gint find_entry = -1;
@@ -151,11 +147,143 @@ text_changed_cb (GtkEntry   *entry,
   gtk_widget_set_sensitive ( button, has_text );
 }
 
-static gchar *a_prompt_for_goto_string(VikWindow *vw)
+/**
+ * Goto a place when we already have a string to search on
+ *
+ * Returns: %TRUE if a successful lookup
+ */
+static gboolean vik_goto_place ( VikWindow *vw, VikViewport *vvp, gchar* name, VikCoord *vcoord )
+{
+  // Ensure last_goto_tool is given a value
+  get_provider ();
+
+  if ( goto_tools_list ) {
+    VikGotoTool *gototool = g_list_nth_data ( goto_tools_list, last_goto_tool );
+    if ( gototool ) {
+      if ( vik_goto_tool_get_coord ( gototool, vw, vvp, name, vcoord ) == 0 )
+        return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+static gboolean vik_goto_search_list_select ( GtkTreeSelection *sel, GtkTreeModel *model, GtkTreePath *path, gboolean path_currently_selected, gpointer pdata )
+{
+  struct VikGotoSearchWinData *data = (struct VikGotoSearchWinData *) pdata;
+  GtkTreeIter iter;
+
+  if (path_currently_selected)
+    return TRUE;
+
+  if (gtk_tree_model_get_iter(model, &iter, path))
+  {
+    gdouble lat;
+    gdouble lon;
+
+    gtk_tree_model_get(model, &iter, VIK_GOTO_SEARCH_LAT_COL, &lat, -1);
+    gtk_tree_model_get(model, &iter, VIK_GOTO_SEARCH_LON_COL, &lon, -1);
+
+    if (last_coord)
+      g_free(last_coord);
+    last_coord = g_malloc(sizeof(VikCoord));
+
+    struct LatLon ll = { lat, lon };
+    vik_coord_load_from_latlon ( last_coord, VIK_COORD_LATLON, &ll);
+
+    g_debug("Gong to %f %f\n", last_coord->north_south, last_coord->east_west);
+
+    // TODO wtf this is
+    //if (last_successful_goto_str)
+    //  g_free(last_successful_goto_str);
+    //last_successful_goto_str = g_strdup(last_goto_str);
+    vik_viewport_set_center_coord( data->vvp, last_coord, TRUE );
+    vik_layers_panel_emit_update ( vik_window_layers_panel(data->vw) );
+}
+
+  return TRUE;
+}
+
+static void vik_goto_search_response ( struct VikGotoSearchWinData *data, gint response )
+{
+  if ( response == GTK_RESPONSE_ACCEPT )
+  {
+    // TODO check if list is empty
+    last_goto_tool = gtk_combo_box_get_active ( GTK_COMBO_BOX(data->tool_list) );
+    gchar *provider = vik_goto_tool_get_label ( g_list_nth_data (goto_tools_list, last_goto_tool) );
+    a_settings_set_string ( VIK_SETTINGS_GOTO_PROVIDER, provider );
+  
+    gchar *goto_str = g_strdup ( gtk_entry_get_text ( GTK_ENTRY(data->goto_entry) ) );
+  
+    if (goto_str[0] != '\0') {
+      if (last_goto_str)
+        g_free(last_goto_str);
+      last_goto_str = g_strdup(goto_str);
+    }
+
+    VikGotoTool *tool = g_list_nth_data(goto_tools_list, last_goto_tool);
+    
+    GList *candidates = NULL;
+    int ans = vik_goto_tool_get_candidates(tool, data->vw, data->vvp, goto_str, &candidates);
+
+    if ( ans == 0 ) {
+      GtkListStore *results_store = gtk_list_store_new (VIK_GOTO_SEARCH_NUM_COLS, 
+                                                        G_TYPE_STRING,
+                                                        G_TYPE_DOUBLE,
+                                                        G_TYPE_DOUBLE);
+      GtkTreeIter results_iter;
+
+      for (GList *l = candidates; l != NULL; l = l->next)
+      {
+        struct VikGotoCandidate *cand = (struct VikGotoCandidate *) l->data;
+        gtk_list_store_append ( results_store, &results_iter );
+        gtk_list_store_set ( results_store, &results_iter,
+                             VIK_GOTO_SEARCH_DESC_COL, cand->description,//cand->description,
+                             VIK_GOTO_SEARCH_LAT_COL, cand->ll.lat,
+                             VIK_GOTO_SEARCH_LON_COL, cand->ll.lon,
+                             -1 );
+      }
+
+      gtk_tree_view_set_model ( data->results_view, GTK_TREE_MODEL(results_store) );
+
+      if ( g_list_length( candidates ) > 0 )
+      {
+        GtkTreeIter first_iter;
+        gtk_tree_model_get_iter_first ( GTK_TREE_MODEL(results_store), &first_iter);
+        GtkTreeSelection *selection = gtk_tree_view_get_selection( data->results_view );
+        gtk_tree_selection_select_iter ( selection, &first_iter );
+      }
+
+      g_object_unref ( results_store );
+      g_free ( goto_str );
+    }
+    else
+    {
+      a_dialog_error_msg ( GTK_WINDOW(data->vw), "Service request failure." );
+    }
+  }
+  else if ( response == GTK_RESPONSE_CLOSE )
+  {
+    gtk_widget_destroy ( data->dialog );
+    g_free( data );
+  }
+}
+
+void a_vik_goto(VikWindow *vw, VikViewport *vvp)
 {
   GtkWidget *dialog = NULL;
 
-  dialog = gtk_dialog_new_with_buttons ( "", GTK_WINDOW(vw), 0, GTK_STOCK_OK, GTK_RESPONSE_ACCEPT, GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT, NULL );
+  if (goto_tools_list == NULL)
+  {
+    /* Empty list */
+    display_no_tool(vw);
+    return;
+  }
+
+  dialog = gtk_dialog_new_with_buttons ( "", GTK_WINDOW(vw), 0, 
+                                         "_Search", GTK_RESPONSE_ACCEPT,
+                                         GTK_STOCK_CLOSE, GTK_RESPONSE_CLOSE,
+                                         NULL );
+  gtk_window_set_transient_for ( GTK_WINDOW(dialog), GTK_WINDOW(vw) );
   gtk_window_set_title(GTK_WINDOW(dialog), _("goto"));
 
   GtkWidget *tool_label = gtk_label_new(_("goto provider:"));
@@ -180,111 +308,61 @@ static gchar *a_prompt_for_goto_string(VikWindow *vw)
   g_signal_connect_swapped (goto_entry, "activate", G_CALLBACK(a_dialog_response_accept), dialog);
 
 #if GTK_CHECK_VERSION (2,20,0)
-  GtkWidget *ok_button = gtk_dialog_get_widget_for_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
-  text_changed_cb ( GTK_ENTRY(goto_entry), NULL, ok_button );
-  g_signal_connect ( goto_entry, "notify::text", G_CALLBACK (text_changed_cb), ok_button );
+//  GtkWidget *ok_button = gtk_dialog_get_widget_for_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
+//  text_changed_cb ( GTK_ENTRY(goto_entry), NULL, ok_button );
+//  g_signal_connect ( goto_entry, "notify::text", G_CALLBACK (text_changed_cb), ok_button );
 #endif
+
+  GtkWidget *results_view = gtk_tree_view_new ();
+
+  GtkCellRenderer *desc_renderer = gtk_cell_renderer_text_new ();
+  g_object_set (G_OBJECT (desc_renderer), "width-chars", 50, NULL);
+
+  GtkTreeViewColumn *desc_col;
+  desc_col = gtk_tree_view_column_new_with_attributes ( "Description",
+                                                        desc_renderer,
+                                                        "text", VIK_GOTO_SEARCH_DESC_COL,
+                                                        NULL );
+  gtk_tree_view_column_set_resizable ( desc_col, TRUE );
+  gtk_tree_view_append_column ( GTK_TREE_VIEW(results_view), desc_col );
+
+  gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
+                                                -1,
+                                                "Latitude",
+                                                gtk_cell_renderer_text_new (),
+                                                "text", VIK_GOTO_SEARCH_LAT_COL,
+                                                NULL );
+  gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
+                                                -1,
+                                                "Longitude",
+                                                gtk_cell_renderer_text_new (),
+                                                "text", VIK_GOTO_SEARCH_LON_COL,
+                                                NULL );
+  struct VikGotoSearchWinData *win_data = g_malloc ( sizeof(struct VikGotoSearchWinData) );
+  win_data->vw = vw;
+  win_data->vvp = vvp;
+  win_data->dialog = dialog;
+  win_data->goto_entry = GTK_ENTRY(goto_entry);
+  win_data->results_view = GTK_TREE_VIEW(results_view);
+  win_data->tool_list = tool_list;
+
+  GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(results_view));
+  gtk_tree_selection_set_select_function(selection, vik_goto_search_list_select, win_data, NULL);
+
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), tool_label, FALSE, FALSE, 5 );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), tool_list, FALSE, FALSE, 5 );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), goto_label, FALSE, FALSE, 5 );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), goto_entry, FALSE, FALSE, 5 );
+  gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), results_view, FALSE, FALSE, 5 );
   gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
-  gtk_widget_show_all(dialog);
+  g_signal_connect_swapped ( GTK_DIALOG(dialog), "response", G_CALLBACK(vik_goto_search_response), win_data );
+
+  gtk_widget_show_all ( dialog );
 
   // Ensure the text field has focus so we can start typing straight away
   gtk_widget_grab_focus ( goto_entry );
 
-  if ( gtk_dialog_run ( GTK_DIALOG(dialog) ) != GTK_RESPONSE_ACCEPT ) {
-    gtk_widget_destroy(dialog);
-    return NULL;
-  }
-  
-  // TODO check if list is empty
-  last_goto_tool = gtk_combo_box_get_active ( GTK_COMBO_BOX(tool_list) );
-  gchar *provider = vik_goto_tool_get_label ( g_list_nth_data (goto_tools_list, last_goto_tool) );
-  a_settings_set_string ( VIK_SETTINGS_GOTO_PROVIDER, provider );
-
-  gchar *goto_str = g_strdup ( gtk_entry_get_text ( GTK_ENTRY(goto_entry) ) );
-
-  gtk_widget_destroy(dialog);
-
-  if (goto_str[0] != '\0') {
-    if (last_goto_str)
-      g_free(last_goto_str);
-    last_goto_str = g_strdup(goto_str);
-  }
-
-  return(goto_str);   /* goto_str needs to be freed by caller */
-}
-
-/**
- * Goto a place when we already have a string to search on
- *
- * Returns: %TRUE if a successful lookup
- */
-static gboolean vik_goto_place ( VikWindow *vw, VikViewport *vvp, gchar* name, VikCoord *vcoord )
-{
-  // Ensure last_goto_tool is given a value
-  get_provider ();
-
-  if ( goto_tools_list ) {
-    VikGotoTool *gototool = g_list_nth_data ( goto_tools_list, last_goto_tool );
-    if ( gototool ) {
-      if ( vik_goto_tool_get_coord ( gototool, vw, vvp, name, vcoord ) == 0 )
-        return TRUE;
-    }
-  }
-  return FALSE;
-}
-
-void a_vik_goto(VikWindow *vw, VikViewport *vvp)
-{
-  VikCoord new_center;
-  gchar *s_str;
-  gboolean more = TRUE;
-  GList *candidates;
-
-  if (goto_tools_list == NULL)
-  {
-    /* Empty list */
-    display_no_tool(vw);
-    return;
-  }
-
-  candidates = NULL;
-
-  do {
-    s_str = a_prompt_for_goto_string(vw);
-    if ((!s_str) || (s_str[0] == 0)) {
-      more = FALSE;
-    }
-    else {
-      VikGotoTool *tool = g_list_nth_data(goto_tools_list, last_goto_tool);
-      // MATT TODO: something with candidates
-      int ans = vik_goto_tool_get_candidates(tool, vw, vvp, s_str, &candidates);
-      ans = vik_goto_tool_get_coord(tool, vw, vvp, s_str, &new_center);
-      if ( ans == 0 ) {
-        if (last_coord)
-          g_free(last_coord);
-        last_coord = g_malloc(sizeof(VikCoord));
-        *last_coord = new_center;
-        if (last_successful_goto_str)
-          g_free(last_successful_goto_str);
-        last_successful_goto_str = g_strdup(last_goto_str);
-        vik_viewport_set_center_coord(vvp, &new_center, TRUE);
-        more = FALSE;
-      }
-      else if ( ans == -1 ) {
-        if (!prompt_try_again(vw, _("I don't know that place. Do you want another goto?")))
-          more = FALSE;
-      }
-      else if (!prompt_try_again(vw, _("Service request failure. Do you want another goto?")))
-        more = FALSE;
-    }
-    g_free(s_str);
-  } while (more);
-
-  g_list_free(candidates);
+  gtk_widget_show ( dialog );
 }
 
 #define JSON_LATITUDE_PATTERN "\"geoplugin_latitude\":\""
