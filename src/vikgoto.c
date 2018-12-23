@@ -228,7 +228,6 @@ static void vik_goto_search_response ( struct VikGotoSearchWinData *data, gint r
     vik_window_clear_busy_cursor_widget ( data->dialog, data->vw );
 
     if ( ans == 0 ) {
-
       // make results visible
       gtk_widget_set_size_request( GTK_WIDGET(data->scroll_view), 320, 240 );
       gtk_widget_set_size_request( GTK_WIDGET(data->results_view), 320, 240 );
@@ -288,7 +287,7 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
   }
 
   dialog = gtk_dialog_new_with_buttons ( "", GTK_WINDOW(vw), 0, 
-                                         "_Search", GTK_RESPONSE_ACCEPT,
+                                         GTK_STOCK_FIND, GTK_RESPONSE_ACCEPT,
                                          GTK_STOCK_CLOSE, GTK_RESPONSE_CLOSE,
                                          NULL );
   gtk_window_set_transient_for ( GTK_WINDOW(dialog), GTK_WINDOW(vw) );
