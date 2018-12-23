@@ -55,6 +55,7 @@ struct VikGotoSearchWinData {
   GtkWidget *dialog;
   GtkEntry *goto_entry;
   GtkWidget *tool_list;
+  GtkWidget *scroll_view;
   GtkTreeView *results_view;
 };
 
@@ -227,6 +228,12 @@ static void vik_goto_search_response ( struct VikGotoSearchWinData *data, gint r
     vik_window_clear_busy_cursor_widget ( data->dialog, data->vw );
 
     if ( ans == 0 ) {
+
+      // make results visible
+      gtk_widget_set_size_request( GTK_WIDGET(data->scroll_view), 320, 240 );
+      gtk_widget_set_size_request( GTK_WIDGET(data->results_view), 320, 240 );
+      gtk_widget_show ( data->scroll_view );
+
       GtkListStore *results_store = gtk_list_store_new (VIK_GOTO_SEARCH_NUM_COLS, 
                                                         G_TYPE_STRING,
                                                         G_TYPE_DOUBLE,
@@ -315,10 +322,14 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
 #endif
 
   GtkWidget *results_view = gtk_tree_view_new ();
+  GtkWidget *scroll_view = gtk_scrolled_window_new ( NULL, NULL );
 
+  gtk_widget_set_size_request( GTK_WIDGET(scroll_view), 0, 0 );
+
+  gtk_container_add ( GTK_CONTAINER(scroll_view), results_view );
+  gtk_scrolled_window_set_policy ( GTK_SCROLLED_WINDOW(scroll_view), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC );
+  
   GtkCellRenderer *desc_renderer = gtk_cell_renderer_text_new ();
-  g_object_set (G_OBJECT (desc_renderer), "width-chars", 50, NULL);
-
   gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
                                                 -1,
                                                 "Description",
@@ -347,6 +358,7 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
   win_data->vvp = vvp;
   win_data->dialog = dialog;
   win_data->goto_entry = GTK_ENTRY(goto_entry);
+  win_data->scroll_view = scroll_view;
   win_data->results_view = GTK_TREE_VIEW(results_view);
   win_data->tool_list = tool_list;
 
@@ -357,11 +369,14 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), tool_list, FALSE, FALSE, 5 );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), goto_label, FALSE, FALSE, 5 );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), goto_entry, FALSE, FALSE, 5 );
-  gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), results_view, FALSE, FALSE, 5 );
+  gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scroll_view, TRUE, TRUE, 5 );
+//  gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), results_view, FALSE, FALSE, 5 );
   gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
   g_signal_connect_swapped ( GTK_DIALOG(dialog), "response", G_CALLBACK(vik_goto_search_response), win_data );
 
   gtk_widget_show_all ( dialog );
+  // don't show the scroll view until we have something to show
+  gtk_widget_hide ( scroll_view );
 
   // Ensure the text field has focus so we can start typing straight away
   gtk_widget_grab_focus ( goto_entry );
