@@ -190,15 +190,13 @@ static gboolean vik_goto_search_list_select ( GtkTreeSelection *sel, GtkTreeMode
     struct LatLon ll = { lat, lon };
     vik_coord_load_from_latlon ( last_coord, VIK_COORD_LATLON, &ll);
 
-    g_debug("Gong to %f %f\n", last_coord->north_south, last_coord->east_west);
+    if (last_successful_goto_str)
+      g_free(last_successful_goto_str);
+    last_successful_goto_str = g_strdup(last_goto_str);
 
-    // TODO wtf this is
-    //if (last_successful_goto_str)
-    //  g_free(last_successful_goto_str);
-    //last_successful_goto_str = g_strdup(last_goto_str);
     vik_viewport_set_center_coord( data->vvp, last_coord, TRUE );
     vik_layers_panel_emit_update ( vik_window_layers_panel(data->vw) );
-}
+  }
 
   return TRUE;
 }
@@ -223,7 +221,10 @@ static void vik_goto_search_response ( struct VikGotoSearchWinData *data, gint r
     VikGotoTool *tool = g_list_nth_data(goto_tools_list, last_goto_tool);
     
     GList *candidates = NULL;
+
+    vik_window_set_busy_cursor_widget ( data->dialog, data->vw );
     int ans = vik_goto_tool_get_candidates(tool, data->vw, data->vvp, goto_str, &candidates);
+    vik_window_clear_busy_cursor_widget ( data->dialog, data->vw );
 
     if ( ans == 0 ) {
       GtkListStore *results_store = gtk_list_store_new (VIK_GOTO_SEARCH_NUM_COLS, 
@@ -318,26 +319,29 @@ void a_vik_goto(VikWindow *vw, VikViewport *vvp)
   GtkCellRenderer *desc_renderer = gtk_cell_renderer_text_new ();
   g_object_set (G_OBJECT (desc_renderer), "width-chars", 50, NULL);
 
-  GtkTreeViewColumn *desc_col;
-  desc_col = gtk_tree_view_column_new_with_attributes ( "Description",
-                                                        desc_renderer,
-                                                        "text", VIK_GOTO_SEARCH_DESC_COL,
-                                                        NULL );
-  gtk_tree_view_column_set_resizable ( desc_col, TRUE );
-  gtk_tree_view_append_column ( GTK_TREE_VIEW(results_view), desc_col );
+  gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
+                                                -1,
+                                                "Description",
+                                                desc_renderer,
+                                                "text", VIK_GOTO_SEARCH_DESC_COL,
+                                                NULL );
 
-  gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
-                                                -1,
-                                                "Latitude",
-                                                gtk_cell_renderer_text_new (),
-                                                "text", VIK_GOTO_SEARCH_LAT_COL,
-                                                NULL );
-  gtk_tree_view_insert_column_with_attributes ( GTK_TREE_VIEW(results_view),
-                                                -1,
-                                                "Longitude",
-                                                gtk_cell_renderer_text_new (),
-                                                "text", VIK_GOTO_SEARCH_LON_COL,
-                                                NULL );
+  GtkTreeViewColumn *lat_col;
+  lat_col = gtk_tree_view_column_new_with_attributes ( "Latitude",
+                                                       gtk_cell_renderer_text_new (),
+                                                       "text", VIK_GOTO_SEARCH_LAT_COL,
+                                                       NULL );
+  gtk_tree_view_column_set_visible ( lat_col, FALSE );
+  gtk_tree_view_append_column ( GTK_TREE_VIEW(results_view), lat_col );
+
+  GtkTreeViewColumn *lon_col;
+  lon_col = gtk_tree_view_column_new_with_attributes ( "Longitude",
+                                                       gtk_cell_renderer_text_new (),
+                                                       "text", VIK_GOTO_SEARCH_LON_COL,
+                                                       NULL );
+  gtk_tree_view_column_set_visible ( lon_col, FALSE );
+  gtk_tree_view_append_column ( GTK_TREE_VIEW(results_view), lon_col );
+
   struct VikGotoSearchWinData *win_data = g_malloc ( sizeof(struct VikGotoSearchWinData) );
   win_data->vw = vw;
   win_data->vvp = vvp;
