@@ -95,11 +95,6 @@ static void layers_panel_finalize ( GObject *gob );
 static void vik_layers_panel_elevation_update ( VikLayersPanel *vlp );
 static void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt );
 
-static const gint DEF_PROFILE_WIDTH = 200;
-static const gint DEF_PROFILE_HEIGHT = 100;
-
-
-
 G_DEFINE_TYPE (VikLayersPanel, vik_layers_panel, GTK_TYPE_VBOX)
 
 static void vik_layers_panel_class_init ( VikLayersPanelClass *klass )
@@ -550,7 +545,7 @@ static void vik_layers_panel_init ( VikLayersPanel *vlp )
   vik_layers_panel_set_preferences ( vlp );
 
   vlp->elevation = gtk_vbox_new ( FALSE, 0 );
-  GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), DEF_PROFILE_WIDTH, DEF_PROFILE_HEIGHT, -1 );
+  GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), 0, 0, -1 );
   vlp->elevation_image = gtk_image_new_from_pixmap ( pix, NULL );
   g_object_unref ( G_OBJECT(pix) );
   GtkWidget *event_box = gtk_event_box_new ();
@@ -1130,8 +1125,18 @@ void vik_layers_panel_set_preferences ( VikLayersPanel *vlp )
   g_object_set_property ( G_OBJECT(vlp->calendar), "show-day-names", &sd );
 }
 
-void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
+void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) 
+{
   VikWindow *vw = VIK_WINDOW_FROM_WIDGET(vlp);
+
+  // currently only draw directly selected track or route
+  VikTrack *track = (VikTrack*)vik_window_get_selected_track ( vw );
+  if ( track == NULL ) {
+    GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), 0, 0, -1 );
+    gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
+    g_object_unref ( G_OBJECT(pix) );
+    return;
+  }
 
   gint max_height = .25 * GTK_WIDGET(vlp)->allocation.height;
   gint profile_width = .95 * vlp->elevation->allocation.width;
@@ -1139,11 +1144,6 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
 
   if ( profile_height > max_height )
     profile_height = max_height;
-
-  // currently only draw directly selected track or route
-  VikTrack *track = (VikTrack*)vik_window_get_selected_track ( vw );
-  if ( track == NULL )
-      return;
 
   // set profile width to 200 for now
   gdouble *altitudes = vik_track_make_elevation_map ( track, profile_width );
