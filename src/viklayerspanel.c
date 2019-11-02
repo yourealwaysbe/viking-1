@@ -95,8 +95,8 @@ static void layers_panel_finalize ( GObject *gob );
 static void vik_layers_panel_elevation_update ( VikLayersPanel *vlp );
 static void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt );
 
-static const gint PROFILE_WIDTH = 200;
-static const gint PROFILE_HEIGHT = 100;
+static const gint DEF_PROFILE_WIDTH = 200;
+static const gint DEF_PROFILE_HEIGHT = 100;
 
 
 
@@ -550,7 +550,7 @@ static void vik_layers_panel_init ( VikLayersPanel *vlp )
   vik_layers_panel_set_preferences ( vlp );
 
   vlp->elevation = gtk_vbox_new ( FALSE, 0 );
-  GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), PROFILE_WIDTH, PROFILE_HEIGHT, -1 );
+  GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), DEF_PROFILE_WIDTH, DEF_PROFILE_HEIGHT, -1 );
   vlp->elevation_image = gtk_image_new_from_pixmap ( pix, NULL );
   g_object_unref ( G_OBJECT(pix) );
   GtkWidget *event_box = gtk_event_box_new ();
@@ -1133,13 +1133,20 @@ void vik_layers_panel_set_preferences ( VikLayersPanel *vlp )
 void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
   VikWindow *vw = VIK_WINDOW_FROM_WIDGET(vlp);
 
+  gint max_height = .25 * GTK_WIDGET(vlp)->allocation.height;
+  gint profile_width = .95 * vlp->elevation->allocation.width;
+  gint profile_height = .3 * profile_width;
+
+  if ( profile_height > max_height )
+    profile_height = max_height;
+
   // currently only draw directly selected track or route
   VikTrack *track = (VikTrack*)vik_window_get_selected_track ( vw );
   if ( track == NULL )
       return;
 
   // set profile width to 200 for now
-  gdouble *altitudes = vik_track_make_elevation_map ( track, PROFILE_WIDTH );
+  gdouble *altitudes = vik_track_make_elevation_map ( track, profile_width );
 
   if (altitudes != NULL ) {
     gdouble min_alt, max_alt;
@@ -1147,9 +1154,9 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
     if ( !vik_track_get_minmax_alt ( track, &min_alt, &max_alt ) )
       min_alt = max_alt = NAN;
 
-    vik_layers_panel_fill_dem_altitudes( track, altitudes, PROFILE_WIDTH, &min_alt, &max_alt );
+    vik_layers_panel_fill_dem_altitudes( track, altitudes, profile_width, &min_alt, &max_alt );
     
-    GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), PROFILE_WIDTH, PROFILE_HEIGHT, -1 );
+    GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), profile_width, profile_height, -1 );
     gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
 
     GdkColor color;
@@ -1162,12 +1169,12 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
     gdk_gc_set_rgb_fg_color ( alt_gc, &color);
 
     /* draw elevations */
-    for ( int i = 0; i < PROFILE_WIDTH; i++ ) {
+    for ( int i = 0; i < profile_width; i++ ) {
       if ( isnan(altitudes[i]) ) {
-        gdk_draw_line ( GDK_DRAWABLE(pix), no_alt_gc, i, PROFILE_HEIGHT, i, PROFILE_HEIGHT);
+        gdk_draw_line ( GDK_DRAWABLE(pix), no_alt_gc, i, profile_height, i, profile_height);
       } else {
-        gdouble normalized_height = PROFILE_HEIGHT * altitudes[i] / max_alt;
-        gdk_draw_line ( GDK_DRAWABLE(pix), alt_gc, i, PROFILE_HEIGHT, i, PROFILE_HEIGHT - normalized_height );
+        gdouble normalized_height = profile_height * altitudes[i] / max_alt;
+        gdk_draw_line ( GDK_DRAWABLE(pix), alt_gc, i, profile_height, i, profile_height - normalized_height );
       }
     }
 
