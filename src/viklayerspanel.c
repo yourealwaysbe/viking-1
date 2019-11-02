@@ -63,6 +63,9 @@ struct _VikLayersPanel {
   gboolean cal_shown;
   calendar_mu_t cal_markup;
 
+  GtkWidget *elevation;
+  GtkWidget *elevation_image;
+
   VikAggregateLayer *toplayer;
   GtkTreeIter toplayer_iter;
 
@@ -88,6 +91,12 @@ static void layers_move_item ( VikLayersPanel *vlp, gboolean up );
 static void layers_move_item_up ( VikLayersPanel *vlp );
 static void layers_move_item_down ( VikLayersPanel *vlp );
 static void layers_panel_finalize ( GObject *gob );
+static void vik_layers_panel_elevation_update ( VikLayersPanel *vlp );
+
+static const gint PROFILE_WIDTH = 200;
+static const gint PROFILE_HEIGHT = 100;
+
+
 
 G_DEFINE_TYPE (VikLayersPanel, vik_layers_panel, GTK_TYPE_VBOX)
 
@@ -537,9 +546,18 @@ static void vik_layers_panel_init ( VikLayersPanel *vlp )
 
   gtk_calendar_set_detail_func ( GTK_CALENDAR(vlp->calendar), calendar_detail, vlp, NULL );
   vik_layers_panel_set_preferences ( vlp );
-  
+
+  vlp->elevation = gtk_vbox_new ( FALSE, 0 );
+  GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), PROFILE_WIDTH, PROFILE_HEIGHT, -1 );
+  vlp->elevation_image = gtk_image_new_from_pixmap ( pix, NULL );
+  g_object_unref ( G_OBJECT(pix) );
+  GtkWidget *event_box = gtk_event_box_new ();
+  gtk_container_add (GTK_CONTAINER (event_box), vlp->elevation_image);
+  gtk_box_pack_start ( GTK_BOX(vlp->elevation), event_box, FALSE, FALSE, 0 );
+
   gtk_box_pack_start ( GTK_BOX(vlp), scrolledwindow, TRUE, TRUE, 0 );
   gtk_box_pack_start ( GTK_BOX(vlp), vlp->calendar, FALSE, FALSE, 0 );
+  gtk_box_pack_start ( GTK_BOX(vlp), vlp->elevation, FALSE, FALSE, 0 );
   gtk_box_pack_start ( GTK_BOX(vlp), vlp->hbox, FALSE, FALSE, 0 );
 }
 
@@ -847,6 +865,7 @@ void vik_layers_panel_draw_all ( VikLayersPanel *vlp )
 {
   if ( vlp->vvp && VIK_LAYER(vlp->toplayer)->visible )
     vik_aggregate_layer_draw ( vlp->toplayer, vlp->vvp );
+  vik_layers_panel_elevation_update ( vlp );
 }
 
 void vik_layers_panel_cut_selected ( VikLayersPanel *vlp )
@@ -1107,4 +1126,50 @@ void vik_layers_panel_set_preferences ( VikLayersPanel *vlp )
   g_value_init ( &sd, G_TYPE_BOOLEAN );
   g_value_set_boolean ( &sd, a_vik_get_calendar_show_day_names() );
   g_object_set_property ( G_OBJECT(vlp->calendar), "show-day-names", &sd );
+}
+
+void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
+  VikWindow *vw = VIK_WINDOW_FROM_WIDGET(vlp);
+
+  // currently only draw directly selected track or route
+  VikTrack *track = (VikTrack*)vik_window_get_selected_track ( vw );
+  if ( track == NULL )
+      return;
+
+  // set profile width to 200 for now
+  gdouble *altitudes = vik_track_make_elevation_map ( track, PROFILE_WIDTH );
+
+  if (altitudes != NULL ) {
+    gdouble min_alt, max_alt;
+
+    // Don't use minmax_array(widgets->altitudes), as that is a simplified representative of the points
+    //  thus can miss the highest & lowest values by a few metres
+    if ( !vik_track_get_minmax_alt ( track, &min_alt, &max_alt ) )
+      min_alt = max_alt = NAN;
+
+    GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), PROFILE_WIDTH, PROFILE_HEIGHT, -1 );
+    gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
+
+    GdkColor color;
+    GdkGC *no_alt_gc = gdk_gc_new ( gtk_widget_get_window( vlp->elevation ) );
+    gdk_color_parse ( "yellow", &color );
+    gdk_gc_set_rgb_fg_color ( no_alt_gc, &color);
+
+    GdkGC *alt_gc = gdk_gc_new ( gtk_widget_get_window( vlp->elevation ) );
+    gdk_color_parse ( "red", &color );
+    gdk_gc_set_rgb_fg_color ( alt_gc, &color);
+
+    /* draw elevations */
+    for ( int i = 0; i < PROFILE_WIDTH; i++ ) {
+      if ( isnan(altitudes[i]) ) {
+        gdk_draw_line ( GDK_DRAWABLE(pix), no_alt_gc, i, PROFILE_HEIGHT, i, PROFILE_HEIGHT);
+      } else {
+        gdouble normalized_height = PROFILE_HEIGHT * altitudes[i] / max_alt;
+        gdk_draw_line ( GDK_DRAWABLE(pix), alt_gc, i, PROFILE_HEIGHT, i, PROFILE_HEIGHT - normalized_height );
+      }
+    }
+
+    g_object_unref ( G_OBJECT(pix) );
+  }
+
 }
