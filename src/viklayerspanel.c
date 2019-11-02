@@ -24,6 +24,7 @@
 #include "config.h"
 #endif
 
+#include "dems.h"
 #include "viking.h"
 #include "vikutils.h"
 #include "settings.h"
@@ -92,6 +93,7 @@ static void layers_move_item_up ( VikLayersPanel *vlp );
 static void layers_move_item_down ( VikLayersPanel *vlp );
 static void layers_panel_finalize ( GObject *gob );
 static void vik_layers_panel_elevation_update ( VikLayersPanel *vlp );
+static void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt );
 
 static const gint PROFILE_WIDTH = 200;
 static const gint PROFILE_HEIGHT = 100;
@@ -1142,11 +1144,11 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
   if (altitudes != NULL ) {
     gdouble min_alt, max_alt;
 
-    // Don't use minmax_array(widgets->altitudes), as that is a simplified representative of the points
-    //  thus can miss the highest & lowest values by a few metres
     if ( !vik_track_get_minmax_alt ( track, &min_alt, &max_alt ) )
       min_alt = max_alt = NAN;
 
+    vik_layers_panel_fill_dem_altitudes( track, altitudes, PROFILE_WIDTH, &min_alt, &max_alt );
+    
     GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), PROFILE_WIDTH, PROFILE_HEIGHT, -1 );
     gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
 
@@ -1171,5 +1173,43 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) {
 
     g_object_unref ( G_OBJECT(pix) );
   }
+}
 
+
+/**
+ * Fill in blanks in altitudes array with DEM data and update min/max
+ * vals
+ */
+void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt )
+{
+  GList *iter;
+  gdouble total_length = vik_track_get_length_including_gaps(tr);
+
+  gdouble dist = 0;
+  int prev_x = 0;
+  
+  for (iter = tr->trackpoints->next; iter; iter = iter->next) {
+    dist += vik_coord_diff ( &(VIK_TRACKPOINT(iter->data)->coord), &(VIK_TRACKPOINT(iter->prev->data)->coord) );
+    gint16 elev = a_dems_get_elev_by_coord(&(VIK_TRACKPOINT(iter->data)->coord), VIK_DEM_INTERPOL_BEST);
+
+    if ( elev < *min_alt )
+      *min_alt = elev;
+    if ( elev > *max_alt )
+      *max_alt = elev;
+
+    // fill in all positions corresponding to track point
+    int new_x = dist / total_length * num_points;
+    for (int x = prev_x + 1; x <= new_x; x++) {
+      if ( isnan(altitudes[x]) ) {
+        if ( elev != VIK_DEM_INVALID_ELEVATION ) {
+            // Convert into height units
+            if (a_vik_get_units_height () == VIK_UNITS_HEIGHT_FEET)
+              elev =  VIK_METERS_TO_FEET(elev);
+          
+            altitudes[x] = elev;
+        }
+      }
+    }
+    prev_x = new_x;
+  }
 }
