@@ -93,7 +93,7 @@ static void layers_move_item_up ( VikLayersPanel *vlp );
 static void layers_move_item_down ( VikLayersPanel *vlp );
 static void layers_panel_finalize ( GObject *gob );
 static void vik_layers_panel_elevation_update ( VikLayersPanel *vlp );
-static void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt );
+static gboolean vik_layers_panel_fill_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt );
 
 G_DEFINE_TYPE (VikLayersPanel, vik_layers_panel, GTK_TYPE_VBOX)
 
@@ -545,11 +545,13 @@ static void vik_layers_panel_init ( VikLayersPanel *vlp )
   vik_layers_panel_set_preferences ( vlp );
 
   vlp->elevation = gtk_vbox_new ( FALSE, 0 );
+  GtkWidget *elevation_label = gtk_label_new(_("Elevation"));
   GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), 0, 0, -1 );
   vlp->elevation_image = gtk_image_new_from_pixmap ( pix, NULL );
   g_object_unref ( G_OBJECT(pix) );
   GtkWidget *event_box = gtk_event_box_new ();
   gtk_container_add (GTK_CONTAINER (event_box), vlp->elevation_image);
+  gtk_box_pack_start ( GTK_BOX(vlp->elevation), elevation_label, FALSE, FALSE, 0 );
   gtk_box_pack_start ( GTK_BOX(vlp->elevation), event_box, FALSE, FALSE, 0 );
 
   gtk_box_pack_start ( GTK_BOX(vlp), scrolledwindow, TRUE, TRUE, 0 );
@@ -1127,6 +1129,11 @@ void vik_layers_panel_set_preferences ( VikLayersPanel *vlp )
 
 void vik_layers_panel_elevation_update ( VikLayersPanel *vlp ) 
 {
+  // avoid concurrency errors
+  // TODO: ask about how this should really be handled
+  if ( vik_viewport_get_half_drawn ( vlp->vvp ) )
+    return;
+
   VikWindow *vw = VIK_WINDOW_FROM_WIDGET(vlp);
 
   // currently only draw directly selected track or route
@@ -1146,77 +1153,91 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp )
     profile_height = max_height;
 
   // set profile width to 200 for now
-  gdouble *altitudes = vik_track_make_elevation_map ( track, profile_width );
+  gdouble min_alt, max_alt;
+  gdouble *altitudes = g_malloc(profile_width * sizeof(gdouble));
 
-  if (altitudes != NULL ) {
-    gdouble min_alt, max_alt;
-
-    if ( !vik_track_get_minmax_alt ( track, &min_alt, &max_alt ) )
-      min_alt = max_alt = NAN;
-
-    vik_layers_panel_fill_dem_altitudes( track, altitudes, profile_width, &min_alt, &max_alt );
+  gboolean has_altitudes = vik_layers_panel_fill_altitudes( track, altitudes, profile_width, &min_alt, &max_alt );
     
+  if ( has_altitudes ) {
     GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), profile_width, profile_height, -1 );
     gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
 
-    GdkColor color;
-    GdkGC *no_alt_gc = gdk_gc_new ( gtk_widget_get_window( vlp->elevation ) );
-    gdk_color_parse ( "yellow", &color );
-    gdk_gc_set_rgb_fg_color ( no_alt_gc, &color);
+    gdk_draw_rectangle ( GDK_DRAWABLE(pix), gtk_widget_get_style(GTK_WIDGET(vlp))->bg_gc[0], TRUE, 0, 0, profile_width, profile_height );
 
-    GdkGC *alt_gc = gdk_gc_new ( gtk_widget_get_window( vlp->elevation ) );
-    gdk_color_parse ( "red", &color );
-    gdk_gc_set_rgb_fg_color ( alt_gc, &color);
+    GdkGC *graph_gc = gtk_widget_get_style(GTK_WIDGET(vlp))->dark_gc[3];
 
     /* draw elevations */
     for ( int i = 0; i < profile_width; i++ ) {
-      if ( isnan(altitudes[i]) ) {
-        gdk_draw_line ( GDK_DRAWABLE(pix), no_alt_gc, i, profile_height, i, profile_height);
-      } else {
+      if ( !isnan(altitudes[i]) ) {
         gdouble normalized_height = profile_height * altitudes[i] / max_alt;
-        gdk_draw_line ( GDK_DRAWABLE(pix), alt_gc, i, profile_height, i, profile_height - normalized_height );
+        gdk_draw_line ( GDK_DRAWABLE(pix), graph_gc, i, profile_height, i, profile_height - normalized_height );
       }
     }
 
     g_object_unref ( G_OBJECT(pix) );
   }
+
+  g_free ( altitudes );
 }
 
 
 /**
- * Fill in blanks in altitudes array with DEM data and update min/max
- * vals
+ * Fill in altitudes array with averages of points data or DEM data
+ * (fallback) and update min/max vals. Returns TRUE if altitudes were
+ * added.
  */
-void vik_layers_panel_fill_dem_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt )
+gboolean vik_layers_panel_fill_altitudes ( VikTrack *tr, gdouble *altitudes, gint num_points, gdouble *min_alt, gdouble *max_alt )
 {
+  gboolean has_elev = FALSE;
+
   GList *iter;
   gdouble total_length = vik_track_get_length_including_gaps(tr);
 
   gdouble dist = 0;
   int prev_x = 0;
+  // average elevation for sections mapping to same x
+  gdouble segment_average = 0.0;
+  gint segment_count = 0;
   
   for (iter = tr->trackpoints->next; iter; iter = iter->next) {
     dist += vik_coord_diff ( &(VIK_TRACKPOINT(iter->data)->coord), &(VIK_TRACKPOINT(iter->prev->data)->coord) );
-    gint16 elev = a_dems_get_elev_by_coord(&(VIK_TRACKPOINT(iter->data)->coord), VIK_DEM_INTERPOL_BEST);
+    int new_x = dist / total_length * (num_points - 1);
 
-    if ( elev < *min_alt )
-      *min_alt = elev;
-    if ( elev > *max_alt )
-      *max_alt = elev;
+    gdouble elev = NAN;
+    if ( !isnan(VIK_TRACKPOINT(iter->data)->altitude) && VIK_TRACKPOINT(iter->data)->altitude < 1E9 ) {
+      elev = VIK_TRACKPOINT(iter->data)->altitude;
+    } else {
+      gint16 dem_elev = (gdouble)a_dems_get_elev_by_coord(&(VIK_TRACKPOINT(iter->data)->coord), VIK_DEM_INTERPOL_BEST);
+      if ( dem_elev != VIK_DEM_INVALID_ELEVATION ) {
+        // Convert into height units
+        if (a_vik_get_units_height () == VIK_UNITS_HEIGHT_FEET)
+          elev = VIK_METERS_TO_FEET(elev);
+        elev = (gdouble) dem_elev;
+      }
+    }
 
-    // fill in all positions corresponding to track point
-    int new_x = dist / total_length * num_points;
-    for (int x = prev_x + 1; x <= new_x; x++) {
-      if ( isnan(altitudes[x]) ) {
-        if ( elev != VIK_DEM_INVALID_ELEVATION ) {
-            // Convert into height units
-            if (a_vik_get_units_height () == VIK_UNITS_HEIGHT_FEET)
-              elev =  VIK_METERS_TO_FEET(elev);
-          
-            altitudes[x] = elev;
+    if ( !isnan(elev) ) {
+      has_elev = TRUE;
+
+      if ( elev < *min_alt )
+        *min_alt = elev;
+      if ( elev > *max_alt )
+        *max_alt = elev;
+
+      segment_average += (elev - segment_average) / (segment_count + 1);
+      segment_count += 1;
+
+      if ( new_x != prev_x ) {
+        for (int x = prev_x + 1; x <= new_x; x++) {
+          altitudes[x] = segment_average;
         }
+
+        segment_average = 0.0;
+        segment_count = 0;
       }
     }
     prev_x = new_x;
   }
+
+  return has_elev;
 }
