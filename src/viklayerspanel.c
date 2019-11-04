@@ -1150,11 +1150,14 @@ void vik_layers_panel_elevation_update ( VikLayersPanel *vlp )
   // currently only draw directly selected track or route
   VikTrack *track = (VikTrack*)vik_window_get_selected_track ( vw );
   if ( track == NULL ) {
+    gtk_widget_hide ( vlp->elevation );
     GdkPixmap *pix = gdk_pixmap_new( gtk_widget_get_window(vlp->elevation), 0, 0, -1 );
     gtk_image_set_from_pixmap ( GTK_IMAGE(vlp->elevation_image), pix, NULL );
     g_object_unref ( G_OBJECT(pix) );
     return;
   }
+
+  gtk_widget_show ( vlp->elevation );
 
   gint max_height = .25 * GTK_WIDGET(vlp)->allocation.height;
   gint profile_width = .95 * vlp->elevation->allocation.width;
