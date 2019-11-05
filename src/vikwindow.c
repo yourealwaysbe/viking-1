@@ -172,6 +172,8 @@ static gboolean window_save ( VikWindow *vw );
 struct _VikWindow {
   GtkWindow gtkwindow;
   GtkWidget *hpaned;
+  GtkWidget *vpaned;
+  GtkWidget *below_vvp;
   VikViewport *viking_vvp;
   VikLayersPanel *viking_vlp;
   VikStatusbar *viking_vs;
@@ -947,8 +949,12 @@ static void vik_window_init ( VikWindow *vw )
   center_changed_cb ( vw );
 
   vw->hpaned = gtk_hpaned_new ();
+  vw->vpaned = gtk_vpaned_new ();
+  vw->below_vvp = gtk_hbox_new ( FALSE, 0 );
+  gtk_paned_pack1 ( GTK_PANED(vw->vpaned), GTK_WIDGET (vw->viking_vvp), TRUE, TRUE );
+  gtk_paned_pack2 ( GTK_PANED(vw->vpaned), GTK_WIDGET (vw->below_vvp), FALSE, TRUE );
   gtk_paned_pack1 ( GTK_PANED(vw->hpaned), GTK_WIDGET (vw->viking_vlp), FALSE, TRUE );
-  gtk_paned_pack2 ( GTK_PANED(vw->hpaned), GTK_WIDGET (vw->viking_vvp), TRUE, TRUE );
+  gtk_paned_pack2 ( GTK_PANED(vw->hpaned), GTK_WIDGET (vw->vpaned), TRUE, TRUE );
 
   /* This packs the button into the window (a gtk container). */
   gtk_box_pack_start (GTK_BOX(vw->main_vbox), vw->hpaned, TRUE, TRUE, 0);
@@ -5424,3 +5430,10 @@ GThread *vik_window_get_thread ( VikWindow *vw )
     return vw->thread;
   return NULL;
 }
+
+void vik_window_pack_below_viewport ( VikWindow *vw, GtkWidget *widget )
+{
+  gtk_box_pack_end ( GTK_BOX(vw->below_vvp), widget, TRUE, TRUE, 0 );
+  gtk_widget_show_all ( widget );
+}
+

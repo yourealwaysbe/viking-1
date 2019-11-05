@@ -3333,18 +3333,21 @@ void vik_trw_layer_propwin_run ( GtkWindow *parent,
       widgets->profile_height = profile_size_value;
 
   gchar *title = g_strdup_printf(_("%s - Track Properties"), tr->name);
-  GtkWidget *dialog = gtk_dialog_new_with_buttons (title,
-                         parent,
-                         GTK_DIALOG_DESTROY_WITH_PARENT | GTK_DIALOG_NO_SEPARATOR,
-                         GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT,
-                         _("Split at _Marker"), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER,
-                         _("Split _Segments"), VIK_TRW_LAYER_PROPWIN_SPLIT,
-                         _("_Reverse"),        VIK_TRW_LAYER_PROPWIN_REVERSE,
-                         _("_Delete Dupl."),   VIK_TRW_LAYER_PROPWIN_DEL_DUP,
-                         GTK_STOCK_OK,     GTK_RESPONSE_ACCEPT,
-                         NULL);
+//  GtkWidget *dialog = gtk_dialog_new_with_buttons (title,
+//                         parent,
+//                         GTK_DIALOG_DESTROY_WITH_PARENT | GTK_DIALOG_NO_SEPARATOR,
+//                         GTK_STOCK_CANCEL, GTK_RESPONSE_REJECT,
+//                         _("Split at _Marker"), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER,
+//                         _("Split _Segments"), VIK_TRW_LAYER_PROPWIN_SPLIT,
+//                         _("_Reverse"),        VIK_TRW_LAYER_PROPWIN_REVERSE,
+//                         _("_Delete Dupl."),   VIK_TRW_LAYER_PROPWIN_DEL_DUP,
+//                         GTK_STOCK_OK,     GTK_RESPONSE_ACCEPT,
+//                         NULL);
+  GtkWidget *dialog = gtk_hbox_new ( FALSE, 0 );
+  vik_window_pack_below_viewport ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_WIDGET(vvp)), GTK_WIDGET (dialog) );
+  
   widgets->dialog = dialog;
-  g_signal_connect( G_OBJECT(dialog), "response", G_CALLBACK(propwin_response_cb), widgets);
+  //g_signal_connect( G_OBJECT(dialog), "response", G_CALLBACK(propwin_response_cb), widgets);
 
   g_free(title);
   GtkWidget *table;
@@ -3365,7 +3368,6 @@ void vik_trw_layer_propwin_run ( GtkWindow *parent,
 
   GtkWidget *content_prop[20];
   int cnt_prop = 0;
-
   static gchar *label_texts[] = {
     N_("<b>Comment:</b>"),
     N_("<b>Description:</b>"),
@@ -3727,22 +3729,22 @@ void vik_trw_layer_propwin_run ( GtkWindow *parent,
     gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Speed-distance")));
   }
 
-  gtk_box_pack_start (GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), graphs, FALSE, FALSE, 0);
+  gtk_box_pack_start (GTK_BOX(dialog), graphs, FALSE, FALSE, 0);
 
-  gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, FALSE);
-  if (seg_count <= 1)
-    gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_SPLIT, FALSE);
-  if (vik_track_get_dup_point_count(tr) <= 0)
-    gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_DEL_DUP, FALSE);
+//  gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, FALSE);
+//  if (seg_count <= 1)
+//    gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_SPLIT, FALSE);
+//  if (vik_track_get_dup_point_count(tr) <= 0)
+//    gtk_dialog_set_response_sensitive(GTK_DIALOG(dialog), VIK_TRW_LAYER_PROPWIN_DEL_DUP, FALSE);
 
   // On dialog realization configure_event causes the graphs to be initially drawn
   widgets->configure_dialog = TRUE;
-  g_signal_connect ( G_OBJECT(dialog), "configure-event", G_CALLBACK (configure_event), widgets );
+//  g_signal_connect ( G_OBJECT(dialog), "configure-event", G_CALLBACK (configure_event), widgets );
 
-  g_signal_connect ( G_OBJECT(dialog), "destroy", G_CALLBACK (destroy_cb), widgets );
+//  g_signal_connect ( G_OBJECT(dialog), "destroy", G_CALLBACK (destroy_cb), widgets );
 
   vik_track_set_property_dialog(tr, dialog);
-  gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
+//  gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
   gtk_widget_show_all ( dialog );
 
   // Gtk note: due to historical reasons, this must be done after widgets are shown

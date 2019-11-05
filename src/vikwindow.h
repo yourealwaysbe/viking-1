@@ -115,6 +115,8 @@ typedef struct {
 
 VikWindow *a_vik_window_get_a_window ();
 
+void vik_window_pack_below_viewport ( VikWindow *vw, GtkWidget *widget );
+
 G_END_DECLS
 
 #define VIK_WINDOW_FROM_WIDGET(x) VIK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(x)))
