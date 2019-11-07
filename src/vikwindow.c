@@ -5431,8 +5431,9 @@ GThread *vik_window_get_thread ( VikWindow *vw )
   return NULL;
 }
 
-void vik_window_pack_below_viewport ( VikWindow *vw, GtkWidget *widget )
+void vik_window_pack_below_viewport ( VikWindow *vw, GtkWidget *widget, GtkSignalFunc *size_change_cb, gpointer *data )
 {
+  g_signal_connect (G_OBJECT(vw->vpaned), "notify::position", size_change_cb, data);
   gtk_box_pack_end ( GTK_BOX(vw->below_vvp), widget, TRUE, TRUE, 0 );
   gtk_widget_show_all ( widget );
 }

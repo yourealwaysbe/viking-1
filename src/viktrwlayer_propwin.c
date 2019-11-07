@@ -3344,7 +3344,7 @@ void vik_trw_layer_propwin_run ( GtkWindow *parent,
 //                         GTK_STOCK_OK,     GTK_RESPONSE_ACCEPT,
 //                         NULL);
   GtkWidget *dialog = gtk_hbox_new ( FALSE, 0 );
-  vik_window_pack_below_viewport ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_WIDGET(vvp)), GTK_WIDGET (dialog) );
+  vik_window_pack_below_viewport ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_WIDGET(vvp)), GTK_WIDGET (dialog), configure_event, widgets );
   
   widgets->dialog = dialog;
   //g_signal_connect( G_OBJECT(dialog), "response", G_CALLBACK(propwin_response_cb), widgets);
