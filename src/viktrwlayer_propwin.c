@@ -510,7 +510,8 @@ static void track_graph_click( GtkWidget *event_box, GdkEventButton *event, Prop
   VikTrackpoint *trackpoint = set_center_at_graph_position(event->x, allocation.width, widgets->vtl, widgets->vlp, widgets->vvp, widgets->tr, is_time_graph, widgets->profile_width);
   // Unable to get the point so give up
   if ( trackpoint == NULL ) {
-    gtk_dialog_set_response_sensitive(GTK_DIALOG(widgets->dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, FALSE);
+    if ( widgets->dialog )
+      gtk_dialog_set_response_sensitive(GTK_DIALOG(widgets->dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, FALSE);
     return;
   }
 
@@ -593,7 +594,8 @@ static void track_graph_click( GtkWidget *event_box, GdkEventButton *event, Prop
     }
   }
 
-  gtk_dialog_set_response_sensitive(GTK_DIALOG(widgets->dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, widgets->is_marker_drawn);
+  if ( widgets->dialog )
+    gtk_dialog_set_response_sensitive(GTK_DIALOG(widgets->dialog), VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER, widgets->is_marker_drawn);
 }
 
 static gboolean track_profile_click( GtkWidget *event_box, GdkEventButton *event, gpointer ptr )
@@ -1571,6 +1573,8 @@ static void draw_elevations (GtkWidget *image, VikTrack *tr, PropWidgets *widget
       gdk_draw_line ( GDK_DRAWABLE(pix), gtk_widget_get_style(window)->dark_gc[3],
                       i + MARGIN_X, height, i + MARGIN_X, height-widgets->profile_height*(widgets->altitudes[i]-mina)/(chunksa[widgets->cia]*LINES) );
 
+  // TODO factor this
+  if ( widgets->w_show_dem ) {
   if ( gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_dem)) ||
        gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_alt_gps_speed)) ) {
 
@@ -1603,6 +1607,7 @@ static void draw_elevations (GtkWidget *image, VikTrack *tr, PropWidgets *widget
     
     g_object_unref ( G_OBJECT(dem_alt_gc) );
     g_object_unref ( G_OBJECT(gps_speed_gc) );
+  }
   }
 
   /* draw border */
@@ -1868,6 +1873,7 @@ static void draw_vt ( GtkWidget *image, VikTrack *tr, PropWidgets *widgets )
     gdk_draw_line ( GDK_DRAWABLE(pix), gtk_widget_get_style(window)->dark_gc[3],
                     i + MARGIN_X, height, i + MARGIN_X, height - widgets->profile_height*(widgets->speeds[i]-mins)/(chunkss[widgets->cis]*LINES) );
 
+  if ( widgets->w_show_gps_speed ) {
   if ( gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widgets->w_show_gps_speed)) ) {
 
     GdkGC *gps_speed_gc = gdk_gc_new ( gtk_widget_get_window(window) );
@@ -1915,6 +1921,7 @@ static void draw_vt ( GtkWidget *image, VikTrack *tr, PropWidgets *widgets )
       gdk_draw_rectangle(GDK_DRAWABLE(pix), gps_speed_gc, TRUE, x-2, y-2, 4, 4);
     }
     g_object_unref ( G_OBJECT(gps_speed_gc) );
+  }
   }
 
   /* draw border */
@@ -2913,7 +2920,6 @@ GtkWidget *vik_trw_layer_create_sddiag ( GtkWidget *window, PropWidgets *widgets
 
   return eventbox;
 }
-#undef MARGIN_X
 
 #define VIK_SETTINGS_TRACK_PROFILE_WIDTH "track_profile_display_width"
 #define VIK_SETTINGS_TRACK_PROFILE_HEIGHT "track_profile_display_height"
@@ -3769,4 +3775,237 @@ void vik_trw_layer_propwin_update ( VikTrack *trk )
     g_free(title);
   }
 
+}
+
+static const guint tab_fudge_factor = 200;
+
+//static gboolean redraw_signal ( GtkWidget *widget, GdkEventConfigure *event, PropWidgets *widgets )
+//static void redraw_signal ( GtkWidget *widget, GdkRectangle *allocation, PropWidgets *widgets )
+//static void redraw_signal ( GtkContainer *container, GtkWidget *widget, PropWidgets *widgets )
+static gboolean redraw_signal ( GtkWidget *widget, GdkEvent *event, PropWidgets *widgets )
+{
+  //g_printf ( "%s GDKevent - %d\n", __FUNCTION__, event->type ); // GDK_EXPOSE -->
+  //GdkEventExpose *expose = event;
+
+  GtkAllocation allocation;
+  gtk_widget_get_allocation ( widget, &allocation );
+  g_printf ( "%s widget size is currently %dx%d - wpw=%d\n", __FUNCTION__, allocation.width, allocation.height, widgets->profile_width );
+
+  // Work out actual size used for the graphs considering various fudge factors
+  widgets->profile_width = allocation.width - tab_fudge_factor - MARGIN_X;
+  widgets->profile_height = allocation.height - MARGIN_Y;
+  // Also need to be careful if the new values are somehow result in the area being bigger
+  //  then drawing itself will trigger another expose event & thus get stuck in loop continually resizing
+
+  // Draw it
+  if ( widgets->profile_width > 0 && widgets->profile_height > 0 )
+    draw_all_graphs ( widget, widgets, TRUE );
+
+  return TRUE;
+}
+
+/**
+ *
+ */
+gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
+                                      VikTrwLayer *vtl,
+                                      VikTrack *tr,
+                                      VikViewport *vvp,
+                                      GtkWidget *self )
+{
+  // Only additive at the moment...
+  // Need to if same track use existing stuff(?) maybe just the existing widgets...
+  PropWidgets *widgets = prop_widgets_new();
+  widgets->vtl = vtl;
+  widgets->vvp = vvp;
+  widgets->tr = tr;
+
+  // Trouble is if we use tabs left/right this cuts into the width
+  //  Maybe resort to right click manual change of graph on display...
+  // Especially as the tab name itself is currently a bit long and takes up space.
+  // TODO Try to get rid/reduce of this MARGIN_X (maybe make it a widget variable)
+  widgets->profile_width = vik_viewport_get_width(vvp) - tab_fudge_factor - MARGIN_X;
+  widgets->profile_height = 150; // Restore from previous ?....
+
+  GtkAllocation allocation;
+  gtk_widget_get_allocation ( self, &allocation );
+  g_printf ( "%s widget size is currently %dx%d - wpw=%d\n", __FUNCTION__, allocation.width, allocation.height, widgets->profile_width );
+
+  // Ensure start with a sensible size
+  gtk_widget_set_size_request ( self, -1, widgets->profile_height );
+  // For some reason resizing smaller horizontally is much slower than resizing bigger
+   
+  //gboolean DEM_available = a_dems_overlaps_bbox (tr->bbox);
+  widgets->track_length_inc_gaps = vik_track_get_length_including_gaps(tr);
+  
+  gdouble min_alt, max_alt;
+  widgets->elev_box = vik_trw_layer_create_profile(GTK_WIDGET(parent), widgets, &min_alt, &max_alt);
+  //widgets->gradient_box = vik_trw_layer_create_gradient(GTK_WIDGET(parent), widgets);
+  widgets->speed_box = vik_trw_layer_create_vtdiag(GTK_WIDGET(parent), widgets);
+  //widgets->dist_box = vik_trw_layer_create_dtdiag(GTK_WIDGET(parent), widgets);
+  //widgets->elev_time_box = vik_trw_layer_create_etdiag(GTK_WIDGET(parent), widgets);
+  //widgets->speed_dist_box = vik_trw_layer_create_sddiag(GTK_WIDGET(parent), widgets);
+
+  //GtkWidget *graphs = gtk_notebook_new();
+  GtkWidget *graphs = self;
+
+  /*
+  if ( widgets->elev_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_dist = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_elevation = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_dem = gtk_check_button_new_with_mnemonic(_("Show D_EM"));
+    gtk_widget_set_sensitive ( widgets->w_show_dem, DEM_available );
+    widgets->w_show_alt_gps_speed = gtk_check_button_new_with_mnemonic(_("Show _GPS Speed"));
+    page = create_graph_page (widgets->elev_box,
+                              _("<b>Track Distance:</b>"), widgets->w_cur_dist,
+                              _("<b>Track Height:</b>"), widgets->w_cur_elevation,
+                              NULL, NULL,
+                              widgets->w_show_dem, show_dem,
+                              widgets->w_show_alt_gps_speed, show_alt_gps_speed);
+    g_signal_connect (widgets->w_show_dem, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    g_signal_connect (widgets->w_show_alt_gps_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Elevation-distance")));
+  }
+  */
+  if ( widgets->elev_box ) {
+    //gtk_container_add ( GTK_CONTAINER(self), widgets->elev_box );
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), widgets->elev_box, gtk_label_new(_("Elevation-distance")));
+  }
+  
+  if ( widgets->speed_box ) {
+    //gtk_container_add ( GTK_CONTAINER(self), widgets->speed_box );
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), widgets->speed_box, gtk_label_new(_("Speed-time")));
+  }
+
+  /*
+  if ( widgets->gradient_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_gradient_dist = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_gradient_gradient = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_gradient_gps_speed = gtk_check_button_new_with_mnemonic(_("Show _GPS Speed"));
+    page = create_graph_page (widgets->gradient_box,
+                              _("<b>Track Distance:</b>"), widgets->w_cur_gradient_dist,
+                              _("<b>Track Gradient:</b>"), widgets->w_cur_gradient_gradient,
+                              NULL, NULL,
+                              widgets->w_show_gradient_gps_speed, show_gradient_gps_speed,
+                              NULL, FALSE);
+    g_signal_connect (widgets->w_show_gradient_gps_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Gradient-distance")));
+  }
+
+  if ( widgets->speed_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_time = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_speed = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_time_real = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_gps_speed = gtk_check_button_new_with_mnemonic(_("Show _GPS Speed"));
+    page = create_graph_page (widgets->speed_box,
+                              _("<b>Track Time:</b>"), widgets->w_cur_time,
+                              _("<b>Track Speed:</b>"), widgets->w_cur_speed,
+                              _("<b>Time/Date:</b>"), widgets->w_cur_time_real,
+                              widgets->w_show_gps_speed, show_gps_speed,
+                              NULL, FALSE);
+    g_signal_connect (widgets->w_show_gps_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Speed-time")));
+  }
+
+  if ( widgets->dist_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_dist_time = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_dist_dist = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_dist_time_real = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_dist_speed = gtk_check_button_new_with_mnemonic(_("Show S_peed"));
+    page = create_graph_page (widgets->dist_box,
+                              _("<b>Track Distance:</b>"), widgets->w_cur_dist_dist,
+                              _("<b>Track Time:</b>"), widgets->w_cur_dist_time,
+                              _("<b>Time/Date:</b>"), widgets->w_cur_dist_time_real,
+                              widgets->w_show_dist_speed, show_dist_speed,
+                              NULL, FALSE);
+    g_signal_connect (widgets->w_show_dist_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Distance-time")));
+  }
+
+  if ( widgets->elev_time_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_elev_time = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_elev_elev = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_elev_time_real = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_elev_speed = gtk_check_button_new_with_mnemonic(_("Show S_peed"));
+    widgets->w_show_elev_dem = gtk_check_button_new_with_mnemonic(_("Show D_EM"));
+    gtk_widget_set_sensitive ( widgets->w_show_elev_dem, DEM_available );
+    page = create_graph_page (widgets->elev_time_box,
+                              _("<b>Track Time:</b>"), widgets->w_cur_elev_time,
+                              _("<b>Track Height:</b>"), widgets->w_cur_elev_elev,
+                              _("<b>Time/Date:</b>"), widgets->w_cur_elev_time_real,
+                              widgets->w_show_elev_dem, show_elev_dem,
+                              widgets->w_show_elev_speed, show_elev_speed);
+    g_signal_connect (widgets->w_show_elev_dem, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    g_signal_connect (widgets->w_show_elev_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Elevation-time")));
+  }
+
+  if ( widgets->speed_dist_box ) {
+    GtkWidget *page = NULL;
+    widgets->w_cur_speed_dist = ui_label_new_selectable(_("No Data"));
+    widgets->w_cur_speed_speed = ui_label_new_selectable(_("No Data"));
+    widgets->w_show_sd_gps_speed = gtk_check_button_new_with_mnemonic(_("Show _GPS Speed"));
+    page = create_graph_page (widgets->speed_dist_box,
+                              _("<b>Track Distance:</b>"), widgets->w_cur_speed_dist,
+                              _("<b>Track Speed:</b>"), widgets->w_cur_speed_speed,
+                              NULL, NULL,
+                              widgets->w_show_sd_gps_speed, show_sd_gps_speed,
+                              NULL, FALSE);
+    g_signal_connect (widgets->w_show_sd_gps_speed, "toggled", G_CALLBACK (checkbutton_toggle_cb), widgets);
+    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Speed-distance")));
+  }
+  */
+  
+  // redraw on resize...
+  //g_signal_connect ( G_OBJECT(self), "configure-event", G_CALLBACK (redraw_signal), widgets ); // Never called
+  //g_signal_connect ( G_OBJECT(self), "size-allocate", G_CALLBACK (redraw_signal), widgets ); // this goes mental and continually calls itself
+  //g_signal_connect ( G_OBJECT(self), "notify::position", G_CALLBACK (redraw_signal), widgets ); // Maybe only inside a pane?
+  //g_signal_connect ( G_OBJECT(self), "check-resize", G_CALLBACK (redraw_signal), widgets ); // Never called (when either frame or notebook)
+
+  // Finally something that seems to at least get called
+  g_signal_connect ( G_OBJECT(self), "expose-event", G_CALLBACK (redraw_signal), widgets );
+
+  gtk_widget_show_all ( self );
+
+  // even get an initial expose-event so don't need to force a first draw
+  //draw_all_graphs ( self, widgets, TRUE );
+ 
+  // Another fun factor is sometimes the tab buttons themselves get obscured/not drawn
+  // Unclear why and when it comes and goes
+  //  - messing around with drawing offsets and/or widget show ordering
+  //  yet the buttons themselves still work... if you know where to click!!!
+  // Sometimes makes you close to dumping it and rewriting the whole thing in QT & C++ and/or Python.
+
+  return (gpointer)widgets;
+}
+
+/**
+ *
+ */
+void vik_trw_layer_propwin_main_close ( gpointer self )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  PropWidgets *widgets = (PropWidgets*)self;
+  // TODO any specific save (different from dialog method)
+  if ( widgets->elev_box )
+    gtk_widget_destroy ( widgets->elev_box );
+
+  if ( widgets->speed_box )
+    gtk_widget_destroy ( widgets->speed_box );
+
+  prop_widgets_free ( widgets );
+}
+
+/**
+ *
+ */
+VikTrack* vik_trw_layer_propwin_main_get_track ( gpointer self )
+{
+  PropWidgets *widgets = (PropWidgets*)self;
+  return widgets->tr;
 }

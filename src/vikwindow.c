@@ -172,10 +172,13 @@ static gboolean window_save ( VikWindow *vw );
 struct _VikWindow {
   GtkWindow gtkwindow;
   GtkWidget *hpaned;
+  GtkWidget *vpaned;
   VikViewport *viking_vvp;
   VikLayersPanel *viking_vlp;
   VikStatusbar *viking_vs;
   VikToolbar *viking_vtb;
+  GtkWidget *properties;
+  gpointer prop_widgets; // viktrwlayer_propwin.c : _propwidgets
 
   GtkWidget *main_vbox;
   GtkWidget *menu_hbox;
@@ -944,9 +947,19 @@ static void vik_window_init ( VikWindow *vw )
   // Set initial button sensitivity
   center_changed_cb ( vw );
 
+  vw->vpaned = gtk_vpaned_new ();
+  // vw->properties needs to be something...
+  //vw->properties = gtk_frame_new ( NULL );
+  vw->properties = gtk_notebook_new ( );
+  gtk_notebook_set_tab_pos ( GTK_NOTEBOOK(vw->properties), GTK_POS_RIGHT ); // Maybe allow config of Left/Right?
+
+  gtk_paned_pack1 ( GTK_PANED(vw->vpaned), GTK_WIDGET(vw->viking_vvp), TRUE, TRUE );
+  gtk_paned_pack2 ( GTK_PANED(vw->vpaned), vw->properties, FALSE, TRUE );
+
   vw->hpaned = gtk_hpaned_new ();
-  gtk_paned_pack1 ( GTK_PANED(vw->hpaned), GTK_WIDGET (vw->viking_vlp), FALSE, TRUE );
-  gtk_paned_pack2 ( GTK_PANED(vw->hpaned), GTK_WIDGET (vw->viking_vvp), TRUE, TRUE );
+  gtk_paned_pack1 ( GTK_PANED(vw->hpaned), GTK_WIDGET(vw->viking_vlp), FALSE, TRUE );
+  gtk_paned_pack2 ( GTK_PANED(vw->hpaned), vw->vpaned, TRUE, TRUE );
+  gtk_widget_hide ( vw->properties ); // Start by not showing it at all
 
   /* This packs the button into the window (a gtk container). */
   gtk_box_pack_start (GTK_BOX(vw->main_vbox), vw->hpaned, TRUE, TRUE, 0);
@@ -1246,7 +1259,7 @@ static gboolean draw_sync ( VikWindow *vw )
 {
   vik_viewport_sync(vw->viking_vvp);
   draw_status ( vw );
-  return TRUE;
+  return FALSE;
 }
 
 /*
@@ -1289,7 +1302,7 @@ void vik_window_set_redraw_trigger(VikLayer *vl)
     vw->trigger = vl;
 }
 
-static void window_configure_event ( VikWindow *vw )
+static gboolean window_configure_event ( VikWindow *vw )
 {
   static gboolean first = TRUE;
   draw_redraw ( vw );
@@ -1313,6 +1326,7 @@ static void window_configure_event ( VikWindow *vw )
     /* We set cursor, even if it is NULL: it resets to default */
     gdk_window_set_cursor ( gtk_widget_get_window(GTK_WIDGET(vw->viking_vvp)), vw->viewport_cursor );
   }
+  return FALSE;
 }
 
 static void draw_redraw ( VikWindow *vw )
@@ -3341,6 +3355,21 @@ static void window_set_filename ( VikWindow *vw, const gchar *filename )
 static const gchar *window_get_filename ( VikWindow *vw )
 {
   return vw->filename ? a_file_basename ( vw->filename ) : _("Untitled");
+}
+
+GtkWidget *vik_window_get_properties_widget ( VikWindow *vw )
+{
+  return vw->properties;
+}
+
+gpointer vik_window_get_properties_widgets ( VikWindow *vw )
+{
+  return vw->prop_widgets;
+}
+
+void vik_window_set_properties_widgets ( VikWindow *vw, gpointer gp )
+{
+  vw->prop_widgets = gp;
 }
 
 GtkWidget *vik_window_get_drawmode_button ( VikWindow *vw, VikViewportDrawMode mode )
@@ -5389,6 +5418,13 @@ void vik_window_set_selected_waypoint ( VikWindow *vw, gpointer *vwp, gpointer v
 
 gboolean vik_window_clear_highlight ( VikWindow *vw )
 {
+  // TODO: TMP HACK - is this the right/best place for this?
+  gtk_widget_hide ( vw->properties );
+  if ( vw->prop_widgets ) {
+    vik_trw_layer_propwin_main_close ( vw->prop_widgets );
+    vw->prop_widgets = NULL;
+  }
+
   gboolean need_redraw = FALSE;
   vw->containing_vtl = NULL;
   if ( vw->selected_vtl != NULL ) {

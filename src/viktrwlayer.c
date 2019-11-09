@@ -3382,6 +3382,23 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
 	    {
 	      VikTrack *track = g_hash_table_lookup ( l->tracks, sublayer );
               vik_window_set_selected_track ( vw, (gpointer)track, l );
+
+              // TODO Determine if should still display property even if track is invisible
+              // (either explicit) on invisible due to the hierachy
+              // ATM always displaying it
+              gpointer props = vik_window_get_properties_widgets ( vw );
+              // If same track selected do nothing
+              if ( props ) {
+                if ( vik_trw_layer_propwin_main_get_track(props) == track ) {
+                  return TRUE;
+                } else {
+                  vik_trw_layer_propwin_main_close ( props );
+                }
+              }
+              GtkWidget *prop = vik_window_get_properties_widget ( vw );
+              VikViewport *vvp = vik_window_viewport ( vw );
+              vik_window_set_properties_widgets ( vw, vik_trw_layer_propwin_main ( GTK_WINDOW(vw), l, track, vvp, prop ) );
+
               return TRUE; // Mark for redraw
 	    }
 	    break;

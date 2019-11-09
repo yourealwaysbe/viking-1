@@ -40,6 +40,16 @@ void vik_trw_layer_propwin_run ( GtkWindow *parent,
 								 VikViewport *vvp,
 								 gboolean start_on_stats );
 
+gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
+                                      VikTrwLayer *vtl,
+                                      VikTrack *tr,
+                                      VikViewport *vvp,
+                                      GtkWidget *self );
+
+VikTrack* vik_trw_layer_propwin_main_get_track ( gpointer self );
+
+void vik_trw_layer_propwin_main_close ( gpointer self );
+
 /**
  * Update this property dialog
  * e.g. if the track has been renamed
