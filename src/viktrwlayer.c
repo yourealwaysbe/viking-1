@@ -3344,6 +3344,20 @@ static void set_statusbar_msg_info_wpt ( VikTrwLayer *vtl, VikWaypoint *wpt )
 }
 
 /**
+ *
+ */
+static void close_vw_properties_if_layer_different ( gpointer props, VikWindow *vw, VikTrwLayer *vtl )
+{
+  if ( props ) {
+    vik_trw_and_track_t vt = vik_trw_layer_propwin_main_get_track ( props );
+    if ( vt.vtl != vtl ) {
+      vik_trw_layer_propwin_main_close ( props );
+      vik_window_set_properties_widgets ( vw, NULL );
+    }
+  }
+}
+
+/**
  * General layer selection function, find out which bit is selected and take appropriate action
  */
 static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer sublayer, gint type, gpointer vlp )
@@ -3359,11 +3373,14 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
   // Clear statusbar
   vik_statusbar_set_message ( vik_window_get_statusbar(vw), VIK_STATUSBAR_INFO, "" );
 
+  gpointer props = vik_window_get_properties_widgets ( vw );
+
   switch ( type )
     {
     case VIK_TREEVIEW_TYPE_LAYER:
       {
         vik_window_set_selected_trw_layer ( vw, l );
+        close_vw_properties_if_layer_different ( props, vw, l );
         return TRUE; // Mark for redraw
       }
       break;
@@ -3375,6 +3392,7 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
 	  case VIK_TRW_LAYER_SUBLAYER_TRACKS:
 	    {
               vik_window_set_selected_tracks ( vw, l->tracks, l );
+              close_vw_properties_if_layer_different ( props, vw, l );
               return TRUE; // Mark for redraw
 	    }
 	    break;
@@ -3386,10 +3404,10 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
               // TODO Determine if should still display property even if track is invisible
               // (either explicit) on invisible due to the hierachy
               // ATM always displaying it
-              gpointer props = vik_window_get_properties_widgets ( vw );
               // If same track selected do nothing
               if ( props ) {
-                if ( vik_trw_layer_propwin_main_get_track(props) == track ) {
+                vik_trw_and_track_t vt = vik_trw_layer_propwin_main_get_track ( props );
+                if ( vt.trk == track ) {
                   return TRUE;
                 } else {
                   vik_trw_layer_propwin_main_close ( props );
@@ -3397,7 +3415,8 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
               }
               GtkWidget *prop = vik_window_get_properties_widget ( vw );
               VikViewport *vvp = vik_window_viewport ( vw );
-              vik_window_set_properties_widgets ( vw, vik_trw_layer_propwin_main ( GTK_WINDOW(vw), l, track, vvp, prop ) );
+              gboolean show = vik_window_get_properties_widgets_shown ( vw );
+              vik_window_set_properties_widgets ( vw, vik_trw_layer_propwin_main(GTK_WINDOW(vw), l, track, vvp, prop, show) );
 
               return TRUE; // Mark for redraw
 	    }
@@ -3405,6 +3424,7 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
 	  case VIK_TRW_LAYER_SUBLAYER_ROUTES:
 	    {
 	      vik_window_set_selected_tracks ( vw, l->routes, l );
+              close_vw_properties_if_layer_different ( props, vw, l );
               return TRUE; // Mark for redraw
 	    }
 	    break;
@@ -3412,12 +3432,22 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
 	    {
 	      VikTrack *track = g_hash_table_lookup ( l->routes, sublayer );
 	      vik_window_set_selected_track ( vw, (gpointer)track, l );
+              // If same track selected do nothing
+              if ( props ) {
+                vik_trw_and_track_t vt = vik_trw_layer_propwin_main_get_track ( props );
+                if ( vt.trk == track ) {
+                  return TRUE;
+                } else {
+                  vik_trw_layer_propwin_main_close ( props );
+                }
+              }
               return TRUE; // Mark for redraw
 	    }
 	    break;
 	  case VIK_TRW_LAYER_SUBLAYER_WAYPOINTS:
 	    {
               vik_window_set_selected_waypoints ( vw, l->waypoints, l );
+              close_vw_properties_if_layer_different ( props, vw, l );
               return TRUE; // Mark for redraw
 	    }
 	    break;
@@ -3428,6 +3458,7 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
                 vik_window_set_selected_waypoint ( vw, (gpointer)wpt, l );
                 // Show some waypoint info
                 set_statusbar_msg_info_wpt ( l, wpt );
+                close_vw_properties_if_layer_different ( props, vw, l );
                 return TRUE; // Mark for redraw
               }
 	    }

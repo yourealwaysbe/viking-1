@@ -130,6 +130,7 @@ typedef struct _propwidgets {
   gint      profile_width_offset;
   gint      profile_height_offset;
   GtkWidget *dialog;
+  GtkWidget *graphs; // When embedded in main window
   GtkWidget *w_comment;
   GtkWidget *w_description;
   GtkWidget *w_source;
@@ -497,8 +498,28 @@ static gdouble tp_percentage_by_distance ( VikTrack *tr, VikTrackpoint *trackpoi
   return pc;
 }
 
+// Fwd decl
+static gboolean split_at_marker ( PropWidgets *widgets );
+
+static gboolean split_at_marker_cb ( PropWidgets *widgets )
+{
+  (void)split_at_marker ( widgets );
+  return FALSE;
+}
+
 static void track_graph_click( GtkWidget *event_box, GdkEventButton *event, PropWidgets *widgets, VikPropWinGraphType_t graph_type )
 {
+  // Only use primary clicks
+  if ( event->button != 1 ) {
+    if ( event->button == 3 ) {
+      GtkWidget *menu = gtk_menu_new ();
+      (void)vu_menu_add_item ( GTK_MENU(menu), _("Split at Marker"), GTK_STOCK_CUT, G_CALLBACK(split_at_marker_cb), widgets );
+      gtk_widget_show_all ( menu );
+      gtk_menu_popup ( GTK_MENU(menu), NULL, NULL, NULL, NULL, 1, gtk_get_current_event_time());
+    }
+    return;
+  }
+
   gboolean is_time_graph =
     ( graph_type == PROPWIN_GRAPH_TYPE_SPEED_TIME ||
       graph_type == PROPWIN_GRAPH_TYPE_DISTANCE_TIME ||
@@ -2955,6 +2976,52 @@ static void destroy_cb ( GtkDialog *dialog, PropWidgets *widgets )
   prop_widgets_free(widgets);
 }
 
+/**
+ *
+ */
+static gboolean split_at_marker ( PropWidgets *widgets )
+{
+  VikTrack *tr = widgets->tr;
+  VikTrwLayer *vtl = widgets->vtl;
+      {
+        GList *iter = tr->trackpoints;
+        while ((iter = iter->next)) {
+          if (widgets->marker_tp == VIK_TRACKPOINT(iter->data))
+            break;
+        }
+        if (iter == NULL) {
+          a_dialog_msg(VIK_GTK_WINDOW_FROM_LAYER(vtl), GTK_MESSAGE_ERROR,
+                  _("Failed spliting track. Track unchanged"), NULL);
+          return TRUE;
+        }
+
+        gchar *r_name = trw_layer_new_unique_sublayer_name(vtl,
+                                                           widgets->tr->is_route ? VIK_TRW_LAYER_SUBLAYER_ROUTE : VIK_TRW_LAYER_SUBLAYER_TRACK,
+                                                           widgets->tr->name);
+        iter->prev->next = NULL;
+        iter->prev = NULL;
+        VikTrack *tr_right = vik_track_new();
+        if ( tr->comment )
+          vik_track_set_comment ( tr_right, tr->comment );
+        tr_right->visible = tr->visible;
+        tr_right->is_route = tr->is_route;
+        tr_right->trackpoints = iter;
+
+        if ( widgets->tr->is_route )
+          vik_trw_layer_add_route(vtl, r_name, tr_right);
+        else
+          vik_trw_layer_add_track(vtl, r_name, tr_right);
+        vik_track_calculate_bounds ( tr );
+        vik_track_calculate_bounds ( tr_right );
+
+        g_free ( r_name );
+
+        vik_layer_emit_update ( VIK_LAYER(vtl) );
+      }
+
+      return FALSE;
+}
+
 static void propwin_response_cb( GtkDialog *dialog, gint resp, PropWidgets *widgets )
 {
   VikTrack *tr = widgets->tr;
@@ -3028,42 +3095,7 @@ static void propwin_response_cb( GtkDialog *dialog, gint resp, PropWidgets *widg
       }
       break;
     case VIK_TRW_LAYER_PROPWIN_SPLIT_MARKER:
-      {
-        GList *iter = tr->trackpoints;
-        while ((iter = iter->next)) {
-          if (widgets->marker_tp == VIK_TRACKPOINT(iter->data))
-            break;
-        }
-        if (iter == NULL) {
-          a_dialog_msg(VIK_GTK_WINDOW_FROM_LAYER(vtl), GTK_MESSAGE_ERROR,
-                  _("Failed spliting track. Track unchanged"), NULL);
-          keep_dialog = TRUE;
-          break;
-        }
-
-        gchar *r_name = trw_layer_new_unique_sublayer_name(vtl,
-                                                           widgets->tr->is_route ? VIK_TRW_LAYER_SUBLAYER_ROUTE : VIK_TRW_LAYER_SUBLAYER_TRACK,
-                                                           widgets->tr->name);
-        iter->prev->next = NULL;
-        iter->prev = NULL;
-        VikTrack *tr_right = vik_track_new();
-        if ( tr->comment )
-          vik_track_set_comment ( tr_right, tr->comment );
-        tr_right->visible = tr->visible;
-        tr_right->is_route = tr->is_route;
-        tr_right->trackpoints = iter;
-
-        if ( widgets->tr->is_route )
-          vik_trw_layer_add_route(vtl, r_name, tr_right);
-        else
-          vik_trw_layer_add_track(vtl, r_name, tr_right);
-        vik_track_calculate_bounds ( tr );
-        vik_track_calculate_bounds ( tr_right );
-
-        g_free ( r_name );
-
-        vik_layer_emit_update ( VIK_LAYER(vtl) );
-      }
+      keep_dialog = split_at_marker ( widgets );
       break;
     default:
       fprintf(stderr, "DEBUG: unknown response\n");
@@ -3777,6 +3809,27 @@ void vik_trw_layer_propwin_update ( VikTrack *trk )
 
 }
 
+/*
+static void r_signal ( GtkWidget *widget, PropWidgets *widgets )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  gtk_widget_show_all ( widgets->graphs );
+}
+
+static void map_signal ( GtkWidget *widget, PropWidgets *widgets )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  gtk_widget_show_all ( widgets->graphs );
+}
+
+static gboolean mape_signal ( GtkWidget *widget, GdkEvent *event, PropWidgets *widgets )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  gtk_widget_show_all ( widgets->graphs );
+  return FALSE;
+}
+*/
+
 static const guint tab_fudge_factor = 200;
 
 //static gboolean redraw_signal ( GtkWidget *widget, GdkEventConfigure *event, PropWidgets *widgets )
@@ -3811,7 +3864,8 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
                                       VikTrwLayer *vtl,
                                       VikTrack *tr,
                                       VikViewport *vvp,
-                                      GtkWidget *self )
+                                      GtkWidget *self,
+                                      gboolean show )
 {
   // Only additive at the moment...
   // Need to if same track use existing stuff(?) maybe just the existing widgets...
@@ -3837,7 +3891,7 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
    
   //gboolean DEM_available = a_dems_overlaps_bbox (tr->bbox);
   widgets->track_length_inc_gaps = vik_track_get_length_including_gaps(tr);
-  
+
   gdouble min_alt, max_alt;
   widgets->elev_box = vik_trw_layer_create_profile(GTK_WIDGET(parent), widgets, &min_alt, &max_alt);
   //widgets->gradient_box = vik_trw_layer_create_gradient(GTK_WIDGET(parent), widgets);
@@ -3846,8 +3900,12 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   //widgets->elev_time_box = vik_trw_layer_create_etdiag(GTK_WIDGET(parent), widgets);
   //widgets->speed_dist_box = vik_trw_layer_create_sddiag(GTK_WIDGET(parent), widgets);
 
-  //GtkWidget *graphs = gtk_notebook_new();
-  GtkWidget *graphs = self;
+  GtkWidget *graphs = gtk_notebook_new ( );
+  // By storing the graphs here & then deleting on close, means any associated signals also get removed
+  //  otherwise signals would keep being called with stale values (or need to manually delete the signals)
+  widgets->graphs = graphs;
+  gtk_notebook_set_tab_pos ( GTK_NOTEBOOK(graphs), GTK_POS_RIGHT ); // Maybe allow config of Left/Right?
+  gtk_container_add ( GTK_CONTAINER(self), graphs );
 
   /*
   if ( widgets->elev_box ) {
@@ -3960,7 +4018,7 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
     gtk_notebook_append_page(GTK_NOTEBOOK(graphs), page, gtk_label_new(_("Speed-distance")));
   }
   */
-  
+
   // redraw on resize...
   //g_signal_connect ( G_OBJECT(self), "configure-event", G_CALLBACK (redraw_signal), widgets ); // Never called
   //g_signal_connect ( G_OBJECT(self), "size-allocate", G_CALLBACK (redraw_signal), widgets ); // this goes mental and continually calls itself
@@ -3968,13 +4026,21 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   //g_signal_connect ( G_OBJECT(self), "check-resize", G_CALLBACK (redraw_signal), widgets ); // Never called (when either frame or notebook)
 
   // Finally something that seems to at least get called
-  g_signal_connect ( G_OBJECT(self), "expose-event", G_CALLBACK (redraw_signal), widgets );
+  g_signal_connect ( G_OBJECT(graphs), "expose-event", G_CALLBACK (redraw_signal), widgets );
 
-  gtk_widget_show_all ( self );
+  /*
+  g_signal_connect ( G_OBJECT(graphs), "realize", G_CALLBACK (r_signal), widgets );
+  g_signal_connect ( G_OBJECT(graphs), "map", G_CALLBACK (map_signal), widgets );
+  g_signal_connect ( G_OBJECT(graphs), "map-event", G_CALLBACK (mape_signal), widgets );
+  */
+
+  // Only display the widgets if the graphs are to be shown
+  if ( show )
+    gtk_widget_show_all ( self );
 
   // even get an initial expose-event so don't need to force a first draw
   //draw_all_graphs ( self, widgets, TRUE );
- 
+
   // Another fun factor is sometimes the tab buttons themselves get obscured/not drawn
   // Unclear why and when it comes and goes
   //  - messing around with drawing offsets and/or widget show ordering
@@ -3991,6 +4057,7 @@ void vik_trw_layer_propwin_main_close ( gpointer self )
 {
   g_printf ( "%s\n", __FUNCTION__ );
   PropWidgets *widgets = (PropWidgets*)self;
+
   // TODO any specific save (different from dialog method)
   if ( widgets->elev_box )
     gtk_widget_destroy ( widgets->elev_box );
@@ -3998,14 +4065,20 @@ void vik_trw_layer_propwin_main_close ( gpointer self )
   if ( widgets->speed_box )
     gtk_widget_destroy ( widgets->speed_box );
 
+  if ( widgets->graphs )
+    gtk_widget_destroy ( widgets->graphs );
+  
   prop_widgets_free ( widgets );
 }
 
 /**
  *
  */
-VikTrack* vik_trw_layer_propwin_main_get_track ( gpointer self )
+vik_trw_and_track_t vik_trw_layer_propwin_main_get_track ( gpointer self )
 {
   PropWidgets *widgets = (PropWidgets*)self;
-  return widgets->tr;
+  vik_trw_and_track_t vt;
+  vt.trk = widgets->tr;
+  vt.vtl = widgets->vtl;
+  return vt;
 }
