@@ -112,6 +112,10 @@ static gboolean show_elev_speed         = FALSE;
 static gboolean show_elev_dem           = FALSE;
 static gboolean show_sd_gps_speed       = TRUE;
 
+static gboolean main_show_dem = TRUE;
+static gboolean main_show_alt_gps_speed = FALSE; // ATM delibrately no GUI control
+static gboolean main_show_gps_speed = TRUE;
+
 typedef struct _propsaved {
   gboolean saved;
   GdkImage *img;
@@ -174,6 +178,9 @@ typedef struct _propwidgets {
   GtkWidget *w_show_elev_speed;
   GtkWidget *w_show_elev_dem;
   GtkWidget *w_show_sd_gps_speed;
+  gboolean  show_dem;
+  gboolean  show_alt_gps_speed;
+  gboolean  show_gps_speed;
   gdouble   track_length;
   gdouble   track_length_inc_gaps;
   PropSaved elev_graph_saved_img;
@@ -501,21 +508,75 @@ static gdouble tp_percentage_by_distance ( VikTrack *tr, VikTrackpoint *trackpoi
 // Fwd decl
 static gboolean split_at_marker ( PropWidgets *widgets );
 
-static gboolean split_at_marker_cb ( PropWidgets *widgets )
+static gboolean menu_split_at_marker_cb ( PropWidgets *widgets )
 {
   (void)split_at_marker ( widgets );
   return FALSE;
 }
 
+// Fwd decl
+static void draw_all_graphs ( GtkWidget *widget, PropWidgets *widgets, gboolean resized );
+
+static gboolean menu_show_dem_cb ( PropWidgets *widgets )
+{
+  widgets->show_dem = !widgets->show_dem;
+  // Force redraw
+  draw_all_graphs ( GTK_WIDGET(widgets->graphs), widgets, TRUE );
+  return FALSE;
+}
+
+static gboolean menu_show_gps_speed_cb ( PropWidgets *widgets )
+{
+  widgets->show_gps_speed = !widgets->show_gps_speed;
+  // Force redraw
+  draw_all_graphs ( GTK_WIDGET(widgets->graphs), widgets, TRUE );
+  return FALSE;
+}
+
+/**
+ *
+ */
+static void graph_click_menu_popup ( PropWidgets *widgets, VikPropWinGraphType_t graph_type )
+{
+  GtkWidget *menu = gtk_menu_new ();
+  GtkWidget *ism = vu_menu_add_item ( GTK_MENU(menu), _("Split at Marker"), GTK_STOCK_CUT, G_CALLBACK(menu_split_at_marker_cb), widgets );
+  gtk_widget_set_sensitive ( ism, (gboolean)GPOINTER_TO_INT(widgets->marker_tp) );
+
+  // Only for the embedded graphs
+  GtkMenu *show_submenu = GTK_MENU(gtk_menu_new());
+  GtkWidget *items = vu_menu_add_item ( GTK_MENU(menu), _("_Show"), NULL, NULL, NULL );
+  gtk_menu_item_set_submenu ( GTK_MENU_ITEM(items), GTK_WIDGET(show_submenu) );
+
+  // Ensure item value is set before adding the callback on these check menu items
+  //  otherwise the callback may be invoked when we set the value!
+  if ( graph_type == PROPWIN_GRAPH_TYPE_ELEVATION_DISTANCE ) {
+    GtkWidget *id = gtk_check_menu_item_new_with_mnemonic ( _("_DEM") );
+    gtk_check_menu_item_set_active ( GTK_CHECK_MENU_ITEM(id), widgets->show_dem );
+    g_signal_connect_swapped ( G_OBJECT(id), "toggled", G_CALLBACK(menu_show_dem_cb), widgets );
+    gtk_menu_shell_append ( GTK_MENU_SHELL(show_submenu), id );
+    gtk_widget_set_sensitive ( id, a_dems_overlaps_bbox (widgets->tr->bbox) );
+    //gtk_widget_set_sensitive ( id, graph_type == PROPWIN_GRAPH_TYPE_ELEVATION_DISTANCE );
+  }
+
+  if ( graph_type == PROPWIN_GRAPH_TYPE_SPEED_TIME ) {
+    GtkWidget *ig = gtk_check_menu_item_new_with_mnemonic ( _("_GPS Speed") );
+    gtk_check_menu_item_set_active ( GTK_CHECK_MENU_ITEM(ig), widgets->show_gps_speed );
+    g_signal_connect_swapped ( G_OBJECT(ig), "toggled", G_CALLBACK(menu_show_gps_speed_cb), widgets );
+    gtk_menu_shell_append ( GTK_MENU_SHELL(show_submenu), ig );
+    //gtk_widget_set_sensitive ( ig, graph_type == PROPWIN_GRAPH_TYPE_SPEED_TIME );
+  }
+
+  gtk_widget_show_all ( menu );
+  gtk_menu_popup ( GTK_MENU(menu), NULL, NULL, NULL, NULL, 1, gtk_get_current_event_time());
+}
+
 static void track_graph_click( GtkWidget *event_box, GdkEventButton *event, PropWidgets *widgets, VikPropWinGraphType_t graph_type )
 {
-  // Only use primary clicks
+  // Only use primary clicks for marker position
   if ( event->button != 1 ) {
-    if ( event->button == 3 ) {
-      GtkWidget *menu = gtk_menu_new ();
-      (void)vu_menu_add_item ( GTK_MENU(menu), _("Split at Marker"), GTK_STOCK_CUT, G_CALLBACK(split_at_marker_cb), widgets );
-      gtk_widget_show_all ( menu );
-      gtk_menu_popup ( GTK_MENU(menu), NULL, NULL, NULL, NULL, 1, gtk_get_current_event_time());
+    // 'right' click for menu - only on the embedded graphs
+    if ( event->button == 3 && !widgets->dialog ) {
+      graph_click_menu_popup ( widgets, graph_type );
     }
     return;
   }
@@ -1594,10 +1655,7 @@ static void draw_elevations (GtkWidget *image, VikTrack *tr, PropWidgets *widget
       gdk_draw_line ( GDK_DRAWABLE(pix), gtk_widget_get_style(window)->dark_gc[3],
                       i + MARGIN_X, height, i + MARGIN_X, height-widgets->profile_height*(widgets->altitudes[i]-mina)/(chunksa[widgets->cia]*LINES) );
 
-  // TODO factor this
-  if ( widgets->w_show_dem ) {
-  if ( gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_dem)) ||
-       gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_alt_gps_speed)) ) {
+  if ( widgets->show_dem || widgets->show_alt_gps_speed ) {
 
     GdkGC *dem_alt_gc = gdk_gc_new ( gtk_widget_get_window(window) );
     GdkGC *gps_speed_gc = gdk_gc_new ( gtk_widget_get_window(window) );
@@ -1623,12 +1681,11 @@ static void draw_elevations (GtkWidget *image, VikTrack *tr, PropWidgets *widget
 			    widgets->profile_width,
 			    widgets->profile_height,
 			    MARGIN_X,
-			    gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_dem)),
-			    gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(widgets->w_show_alt_gps_speed)));
+                            widgets->show_dem,
+                            widgets->show_alt_gps_speed);
     
     g_object_unref ( G_OBJECT(dem_alt_gc) );
     g_object_unref ( G_OBJECT(gps_speed_gc) );
-  }
   }
 
   /* draw border */
@@ -1894,8 +1951,7 @@ static void draw_vt ( GtkWidget *image, VikTrack *tr, PropWidgets *widgets )
     gdk_draw_line ( GDK_DRAWABLE(pix), gtk_widget_get_style(window)->dark_gc[3],
                     i + MARGIN_X, height, i + MARGIN_X, height - widgets->profile_height*(widgets->speeds[i]-mins)/(chunkss[widgets->cis]*LINES) );
 
-  if ( widgets->w_show_gps_speed ) {
-  if ( gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widgets->w_show_gps_speed)) ) {
+  if ( widgets->show_gps_speed ) {
 
     GdkGC *gps_speed_gc = gdk_gc_new ( gtk_widget_get_window(window) );
     GdkColor color;
@@ -1942,7 +1998,6 @@ static void draw_vt ( GtkWidget *image, VikTrack *tr, PropWidgets *widgets )
       gdk_draw_rectangle(GDK_DRAWABLE(pix), gps_speed_gc, TRUE, x-2, y-2, 4, 4);
     }
     g_object_unref ( G_OBJECT(gps_speed_gc) );
-  }
   }
 
   /* draw border */
@@ -2393,7 +2448,6 @@ static void draw_sd ( GtkWidget *image, VikTrack *tr, PropWidgets *widgets)
 static void draw_all_graphs ( GtkWidget *widget, PropWidgets *widgets, gboolean resized )
 {
   // Draw graphs even if they are not visible
-
   GList *child = NULL;
   GtkWidget *image = NULL;
   GtkWidget *window = gtk_widget_get_toplevel(widget);
@@ -2733,6 +2787,14 @@ static gboolean configure_event ( GtkWidget *widget, GdkEventConfigure *event, P
   if ( !widgets->configure_dialog &&
        (widgets->profile_width_old == widgets->profile_width) && (widgets->profile_height_old == widgets->profile_height) )
     return FALSE;
+
+  // These widgets are only on the dialog
+  if ( widgets->w_show_dem )
+    widgets->show_dem = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_dem) );
+  if ( widgets->w_show_alt_gps_speed )
+    widgets->show_alt_gps_speed = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_alt_gps_speed) );
+  if ( widgets->w_show_gps_speed )
+    widgets->show_gps_speed = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_gps_speed) );
 
   // Draw stuff
   draw_all_graphs ( widget, widgets, TRUE );
@@ -3116,6 +3178,13 @@ static void checkbutton_toggle_cb ( GtkToggleButton *togglebutton, PropWidgets *
 {
   // Even though not resized, we'll pretend it is -
   //  as this invalidates the saved images (since the image may have changed)
+  if ( widgets->w_show_dem )
+    widgets->show_dem = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_dem) );
+  if ( widgets->w_show_alt_gps_speed )
+    widgets->show_alt_gps_speed = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_alt_gps_speed) );
+  if ( widgets->w_show_gps_speed )
+    widgets->show_gps_speed = gtk_toggle_button_get_active ( GTK_TOGGLE_BUTTON(widgets->w_show_gps_speed) );
+
   draw_all_graphs ( widgets->dialog, widgets, TRUE );
 }
 
@@ -3873,7 +3942,6 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   widgets->vtl = vtl;
   widgets->vvp = vvp;
   widgets->tr = tr;
-
   // Trouble is if we use tabs left/right this cuts into the width
   //  Maybe resort to right click manual change of graph on display...
   // Especially as the tab name itself is currently a bit long and takes up space.
@@ -3889,8 +3957,10 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   gtk_widget_set_size_request ( self, -1, widgets->profile_height );
   // For some reason resizing smaller horizontally is much slower than resizing bigger
    
-  //gboolean DEM_available = a_dems_overlaps_bbox (tr->bbox);
   widgets->track_length_inc_gaps = vik_track_get_length_including_gaps(tr);
+  widgets->show_dem = main_show_dem;
+  widgets->show_alt_gps_speed = main_show_alt_gps_speed;
+  widgets->show_gps_speed = main_show_gps_speed;
 
   gdouble min_alt, max_alt;
   widgets->elev_box = vik_trw_layer_create_profile(GTK_WIDGET(parent), widgets, &min_alt, &max_alt);
@@ -4058,13 +4128,16 @@ void vik_trw_layer_propwin_main_close ( gpointer self )
   g_printf ( "%s\n", __FUNCTION__ );
   PropWidgets *widgets = (PropWidgets*)self;
 
-  // TODO any specific save (different from dialog method)
+  // Specific save values for embedded graphs (different from dialog method)
+  main_show_dem = widgets->show_dem;
+  main_show_alt_gps_speed = widgets->show_alt_gps_speed;
+  main_show_gps_speed = widgets->show_gps_speed;
+
+  // The widgets
   if ( widgets->elev_box )
     gtk_widget_destroy ( widgets->elev_box );
-
   if ( widgets->speed_box )
     gtk_widget_destroy ( widgets->speed_box );
-
   if ( widgets->graphs )
     gtk_widget_destroy ( widgets->graphs );
   
