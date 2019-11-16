@@ -806,8 +806,35 @@ static gint blobby_speed_dist ( gdouble x_blob, PropWidgets *widgets )
   return y_blob;
 }
 
+static void get_distance_text ( gchar* buf, guint size, gdouble meters_from_start )
+{
+  vik_units_distance_t dist_units = a_vik_get_units_distance ();
+  switch ( dist_units ) {
+  case VIK_UNITS_DISTANCE_KILOMETRES:
+    g_snprintf ( buf, size, "%.2f km", meters_from_start/1000.0 );
+    break;
+  case VIK_UNITS_DISTANCE_MILES:
+    g_snprintf ( buf, size, "%.2f miles", VIK_METERS_TO_MILES(meters_from_start) );
+    break;
+  case VIK_UNITS_DISTANCE_NAUTICAL_MILES:
+    g_snprintf ( buf, size, "%.2f NM", VIK_METERS_TO_NAUTICAL_MILES(meters_from_start) );
+    break;
+  default:
+    g_snprintf ( buf, size, "--" );
+    g_critical("Houston, we've had a problem. distance=%d", dist_units);
+    break;
+  }
+}
 
-void track_profile_move( GtkWidget *event_box, GdkEventMotion *event, PropWidgets *widgets )
+static void get_altitude_text ( gchar* buf, guint size, VikTrackpoint *trackpoint )
+{
+  if ( a_vik_get_units_height () == VIK_UNITS_HEIGHT_FEET )
+    g_snprintf ( buf, size, "%d ft", (int)VIK_METERS_TO_FEET(trackpoint->altitude) );
+  else
+    g_snprintf ( buf, size, "%d m", (int)trackpoint->altitude );
+}
+
+static void track_profile_move( GtkWidget *event_box, GdkEventMotion *event, PropWidgets *widgets )
 {
   int mouse_x, mouse_y;
   GdkModifierType state;
@@ -827,34 +854,19 @@ void track_profile_move( GtkWidget *event_box, GdkEventMotion *event, PropWidget
     x = widgets->profile_width;
 
   gdouble meters_from_start;
-  VikTrackpoint *trackpoint = vik_track_get_closest_tp_by_percentage_dist ( widgets->tr, (gdouble) x / widgets->profile_width, &meters_from_start );
-  if (trackpoint && widgets->w_cur_dist) {
+  VikTrackpoint *trackpoint = vik_track_get_closest_tp_by_percentage_dist ( widgets->tr, x / widgets->profile_width, &meters_from_start );
+
+  if ( trackpoint && widgets->w_cur_dist ) {
     static gchar tmp_buf[20];
-    vik_units_distance_t dist_units = a_vik_get_units_distance ();
-    switch (dist_units) {
-    case VIK_UNITS_DISTANCE_KILOMETRES:
-      g_snprintf(tmp_buf, sizeof(tmp_buf), "%.2f km", meters_from_start/1000.0);
-      break;
-    case VIK_UNITS_DISTANCE_MILES:
-      g_snprintf(tmp_buf, sizeof(tmp_buf), "%.2f miles", VIK_METERS_TO_MILES(meters_from_start) );
-      break;
-    case VIK_UNITS_DISTANCE_NAUTICAL_MILES:
-      g_snprintf(tmp_buf, sizeof(tmp_buf), "%.2f NM", VIK_METERS_TO_NAUTICAL_MILES(meters_from_start) );
-      break;
-    default:
-      g_critical("Houston, we've had a problem. distance=%d", dist_units);
-    }
-    gtk_label_set_text(GTK_LABEL(widgets->w_cur_dist), tmp_buf);
+    get_distance_text ( tmp_buf, sizeof(tmp_buf), meters_from_start );
+    gtk_label_set_text ( GTK_LABEL(widgets->w_cur_dist), tmp_buf );
   }
 
   // Show track elevation for this position - to the nearest whole number
-  if (trackpoint && widgets->w_cur_elevation) {
+  if ( trackpoint && widgets->w_cur_elevation ) {
     static gchar tmp_buf[20];
-    if (a_vik_get_units_height () == VIK_UNITS_HEIGHT_FEET)
-      g_snprintf(tmp_buf, sizeof(tmp_buf), "%d ft", (int)VIK_METERS_TO_FEET(trackpoint->altitude));
-    else
-      g_snprintf(tmp_buf, sizeof(tmp_buf), "%d m", (int)trackpoint->altitude);
-    gtk_label_set_text(GTK_LABEL(widgets->w_cur_elevation), tmp_buf);
+    get_altitude_text ( tmp_buf, sizeof(tmp_buf), trackpoint );
+    gtk_label_set_text ( GTK_LABEL(widgets->w_cur_elevation), tmp_buf );
   }
 
   widgets->blob_tp = trackpoint;
@@ -2824,7 +2836,8 @@ GtkWidget *vik_trw_layer_create_profile ( GtkWidget *window, PropWidgets *widget
   if ( !vik_track_get_minmax_alt (widgets->tr, min_alt, max_alt) )
     *min_alt = *max_alt = NAN;
 
-  pix = gdk_pixmap_new( gtk_widget_get_window(window), widgets->profile_width+MARGIN_X, widgets->profile_height+MARGIN_Y, -1 );
+  //pix = gdk_pixmap_new( gtk_widget_get_window(window), widgets->profile_width+MARGIN_X, widgets->profile_height+MARGIN_Y, -1 );
+  pix = gdk_pixmap_new ( gtk_widget_get_window(window), 1, 1, -1 );
   image = gtk_image_new_from_pixmap ( pix, NULL );
 
   g_object_unref ( G_OBJECT(pix) );
@@ -2882,7 +2895,8 @@ GtkWidget *vik_trw_layer_create_vtdiag ( GtkWidget *window, PropWidgets *widgets
   if ( widgets->speeds == NULL )
     return NULL;
 
-  pix = gdk_pixmap_new( gtk_widget_get_window(window), widgets->profile_width+MARGIN_X, widgets->profile_height+MARGIN_Y, -1 );
+  //pix = gdk_pixmap_new( gtk_widget_get_window(window), widgets->profile_width+MARGIN_X, widgets->profile_height+MARGIN_Y, -1 );
+  pix = gdk_pixmap_new( gtk_widget_get_window(window), 1, 1, -1 );
   image = gtk_image_new_from_pixmap ( pix, NULL );
 
 #if 0
@@ -2941,7 +2955,6 @@ GtkWidget *vik_trw_layer_create_dtdiag ( GtkWidget *window, PropWidgets *widgets
   eventbox = gtk_event_box_new ();
   g_signal_connect ( G_OBJECT(eventbox), "button_press_event", G_CALLBACK(track_dt_click), widgets );
   g_signal_connect ( G_OBJECT(eventbox), "motion_notify_event", G_CALLBACK(track_dt_move), widgets );
-  //g_signal_connect_swapped ( G_OBJECT(eventbox), "destroy", G_CALLBACK(g_free), widgets );
   gtk_container_add ( GTK_CONTAINER(eventbox), image );
   gtk_widget_set_events (eventbox, GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK | GDK_POINTER_MOTION_HINT_MASK);
 
@@ -3923,7 +3936,91 @@ static gboolean redraw_signal ( GtkWidget *widget, GdkEvent *event, PropWidgets 
   if ( widgets->profile_width > 0 && widgets->profile_height > 0 )
     draw_all_graphs ( widget, widgets, TRUE );
 
-  return TRUE;
+  return FALSE;
+}
+
+/**
+ *
+ */
+static gboolean graph_tooltip_cb ( GtkWidget  *widget,
+                                   gint        x,
+                                   gint        y,
+                                   gboolean    keyboard_tip,
+                                   GtkTooltip *tooltip,
+                                   gpointer    data )
+{
+  PropWidgets *widgets = (PropWidgets*)data;
+  g_printf ( "%s %d %d =%d\n", __FUNCTION__, x, y, keyboard_tip );
+  // x & y won't be valid
+  if ( keyboard_tip )
+    return FALSE;
+
+  gdouble xx = x - MARGIN_X - MARGIN_X / 2; // Unclear why this much ATM...
+  if ( xx < 0 ) xx = 0.0;
+  if ( xx > widgets->profile_width ) xx = widgets->profile_width;
+
+
+  gboolean ans = FALSE;
+
+  gchar* text1 = NULL;
+  gchar* text2 = NULL;
+
+  if ( widget == widgets->elev_box ) {
+    gdouble meters_from_start;
+    VikTrackpoint *trackpoint = vik_track_get_closest_tp_by_percentage_dist ( widgets->tr, xx/widgets->profile_width, &meters_from_start );
+    static gchar tmp_buf[20];
+    get_distance_text ( tmp_buf, sizeof(tmp_buf), meters_from_start );
+    text1 = g_strdup ( tmp_buf );
+    get_altitude_text ( tmp_buf, sizeof(tmp_buf), trackpoint );
+    text2 = g_strdup ( tmp_buf );
+  } else if ( widget == widgets->speed_box ) {
+    gdouble seconds_from_start;
+    VikTrackpoint *trackpoint = vik_track_get_closest_tp_by_percentage_time ( widgets->tr, xx/widgets->profile_width, &seconds_from_start );
+    gint ix = (gint)xx;
+    // Ensure ix is inbounds
+    if (ix == widgets->profile_width)
+      ix--;
+    gchar tmp_buf[64];
+    vik_units_speed_t speed_units = a_vik_get_units_speed ();
+    vu_speed_text ( tmp_buf, sizeof(tmp_buf), speed_units, widgets->speeds[ix], FALSE, "%.1f" );
+    text1 = g_strdup ( tmp_buf );
+
+    seconds_from_start = round ( seconds_from_start );
+    guint h = seconds_from_start/3600;
+    guint m = (seconds_from_start - h*3600)/60;
+    guint s = seconds_from_start - (3600*h) - (60*m);
+
+    gchar time_buf[64];
+    if ( !isnan(trackpoint->timestamp) ) {
+      time_t ts = round ( trackpoint->timestamp );
+      // Alternatively could use %c format but I prefer a slightly more compact form here
+      strftime ( time_buf, sizeof(time_buf), "%X %x %Z", localtime(&ts) );
+    }
+    else
+      g_snprintf ( time_buf, sizeof(time_buf), "--" );
+
+    text2 = g_strdup_printf ( "%02d:%02d:%02d - %s", h, m, s, time_buf );
+  }
+
+  if ( text1 && text2 ) {
+    // Combine both parts for a multi line tooltip
+    gchar *text3 = g_strdup_printf ( "%s\n%s", text1, text2 );
+    gtk_tooltip_set_text ( tooltip, text3 );
+    g_free ( text3 );
+    ans = TRUE;
+  } else if ( text1 ) {
+    gtk_tooltip_set_text ( tooltip, text1 );
+    ans = TRUE;
+  } else if ( text2 ) {
+    // Don't think it's actually possible to have an altitude value but no distance value
+    // But just incase...
+    gtk_tooltip_set_text ( tooltip, text2 );
+    ans = TRUE;
+  }
+  g_free ( text2 );
+  g_free ( text1 );
+
+  return ans;
 }
 
 /**
@@ -3954,7 +4051,7 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   g_printf ( "%s widget size is currently %dx%d - wpw=%d\n", __FUNCTION__, allocation.width, allocation.height, widgets->profile_width );
 
   // Ensure start with a sensible size
-  gtk_widget_set_size_request ( self, -1, widgets->profile_height );
+  //gtk_widget_set_size_request ( self, -1, widgets->profile_height );
   // For some reason resizing smaller horizontally is much slower than resizing bigger
    
   widgets->track_length_inc_gaps = vik_track_get_length_including_gaps(tr);
@@ -3971,11 +4068,13 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   //widgets->speed_dist_box = vik_trw_layer_create_sddiag(GTK_WIDGET(parent), widgets);
 
   GtkWidget *graphs = gtk_notebook_new ( );
+  //GtkWidget *graphs = self; // Tabs not showing doesn't matter if no 'frame' used and the
+  // notebook is created in VikWindow
+  // Neither does changing the tab position have any effect.
   // By storing the graphs here & then deleting on close, means any associated signals also get removed
   //  otherwise signals would keep being called with stale values (or need to manually delete the signals)
   widgets->graphs = graphs;
   gtk_notebook_set_tab_pos ( GTK_NOTEBOOK(graphs), GTK_POS_RIGHT ); // Maybe allow config of Left/Right?
-  gtk_container_add ( GTK_CONTAINER(self), graphs );
 
   /*
   if ( widgets->elev_box ) {
@@ -3998,13 +4097,27 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   */
   if ( widgets->elev_box ) {
     //gtk_container_add ( GTK_CONTAINER(self), widgets->elev_box );
-    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), widgets->elev_box, gtk_label_new(_("Elevation-distance")));
+    gtk_notebook_append_page ( GTK_NOTEBOOK(graphs), widgets->elev_box, gtk_label_new(_("Elevation-distance")) );
+    //gtk_notebook_append_page ( GTK_NOTEBOOK(graphs), widgets->elev_box, NULL );
+    g_object_set ( widgets->elev_box, "has-tooltip", TRUE, NULL );
+    g_signal_connect ( widgets->elev_box, "query-tooltip", G_CALLBACK(graph_tooltip_cb), widgets );
   }
   
   if ( widgets->speed_box ) {
     //gtk_container_add ( GTK_CONTAINER(self), widgets->speed_box );
-    gtk_notebook_append_page(GTK_NOTEBOOK(graphs), widgets->speed_box, gtk_label_new(_("Speed-time")));
+    gtk_notebook_append_page ( GTK_NOTEBOOK(graphs), widgets->speed_box, gtk_label_new(_("Speed-time")) );
+    //gtk_notebook_append_page ( GTK_NOTEBOOK(graphs), widgets->speed_box, NULL );
+    g_object_set ( widgets->speed_box, "has-tooltip", TRUE, NULL );
+    g_signal_connect ( widgets->speed_box, "query-tooltip", G_CALLBACK(graph_tooltip_cb), widgets );
   }
+
+  // If no elevation or time info then don't show anything
+  if ( !widgets->elev_box && !widgets->speed_box ) {
+    prop_widgets_free ( widgets );
+    return NULL;
+  }
+
+  gtk_container_add ( GTK_CONTAINER(self), graphs );
 
   /*
   if ( widgets->gradient_box ) {
@@ -4089,14 +4202,23 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   }
   */
 
-  // redraw on resize...
-  //g_signal_connect ( G_OBJECT(self), "configure-event", G_CALLBACK (redraw_signal), widgets ); // Never called
-  //g_signal_connect ( G_OBJECT(self), "size-allocate", G_CALLBACK (redraw_signal), widgets ); // this goes mental and continually calls itself
-  //g_signal_connect ( G_OBJECT(self), "notify::position", G_CALLBACK (redraw_signal), widgets ); // Maybe only inside a pane?
-  //g_signal_connect ( G_OBJECT(self), "check-resize", G_CALLBACK (redraw_signal), widgets ); // Never called (when either frame or notebook)
+  // Ensure start with a sensible size
+  //gtk_widget_set_size_request ( self, -1, widgets->profile_height );
+  // Not needed anymore
 
-  // Finally something that seems to at least get called
-  g_signal_connect ( G_OBJECT(graphs), "expose-event", G_CALLBACK (redraw_signal), widgets );
+  // redraw on resize...
+  //g_signal_connect ( G_OBJECT(self), "configure-event", G_CALLBACK(redraw_signal), widgets ); // Never called
+  //g_signal_connect ( G_OBJECT(self), "size-allocate", G_CALLBACK(redraw_signal), widgets ); // this goes mental and continually calls itself
+  //g_signal_connect ( G_OBJECT(self), "notify::position", G_CALLBACK(redraw_signal), widgets ); // Maybe only inside a pane?
+  //g_signal_connect ( G_OBJECT(self), "check-resize", G_CALLBACK(redraw_signal), widgets ); // Never called (when either frame or notebook)
+
+  // Only display the widgets if the graphs are to be shown
+  if ( show ) {
+    gtk_widget_show_all ( self );
+  }
+
+  // Finally something that seems to at least gets called
+  g_signal_connect ( G_OBJECT(graphs), "expose-event", G_CALLBACK(redraw_signal), widgets );
 
   /*
   g_signal_connect ( G_OBJECT(graphs), "realize", G_CALLBACK (r_signal), widgets );
@@ -4104,18 +4226,8 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   g_signal_connect ( G_OBJECT(graphs), "map-event", G_CALLBACK (mape_signal), widgets );
   */
 
-  // Only display the widgets if the graphs are to be shown
-  if ( show )
-    gtk_widget_show_all ( self );
-
   // even get an initial expose-event so don't need to force a first draw
   //draw_all_graphs ( self, widgets, TRUE );
-
-  // Another fun factor is sometimes the tab buttons themselves get obscured/not drawn
-  // Unclear why and when it comes and goes
-  //  - messing around with drawing offsets and/or widget show ordering
-  //  yet the buttons themselves still work... if you know where to click!!!
-  // Sometimes makes you close to dumping it and rewriting the whole thing in QT & C++ and/or Python.
 
   return (gpointer)widgets;
 }

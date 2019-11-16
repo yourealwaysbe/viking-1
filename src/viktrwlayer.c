@@ -3351,8 +3351,9 @@ static void close_vw_properties_if_layer_different ( gpointer props, VikWindow *
   if ( props ) {
     vik_trw_and_track_t vt = vik_trw_layer_propwin_main_get_track ( props );
     if ( vt.vtl != vtl ) {
-      vik_trw_layer_propwin_main_close ( props );
-      vik_window_set_properties_widgets ( vw, NULL );
+      vik_window_close_properties ( vw );
+      //vik_trw_layer_propwin_main_close ( props );
+      //vik_window_set_properties_widgets ( vw, NULL );
     }
   }
 }
@@ -3410,7 +3411,7 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
                 if ( vt.trk == track ) {
                   return TRUE;
                 } else {
-                  vik_trw_layer_propwin_main_close ( props );
+                  vik_window_close_properties ( vw );
                 }
               }
               GtkWidget *prop = vik_window_get_properties_widget ( vw );
@@ -3438,7 +3439,7 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
                 if ( vt.trk == track ) {
                   return TRUE;
                 } else {
-                  vik_trw_layer_propwin_main_close ( props );
+                  vik_window_close_properties ( vw );
                 }
               }
               return TRUE; // Mark for redraw

@@ -59,6 +59,7 @@ GtkWidget *vik_window_get_properties_widget ( VikWindow *vw );
 gpointer vik_window_get_properties_widgets ( VikWindow *vw );
 void vik_window_set_properties_widgets ( VikWindow *vw, gpointer gp );
 gboolean vik_window_get_properties_widgets_shown ( VikWindow *vw );
+void vik_window_close_properties ( VikWindow *vw );
 
 GtkWidget *vik_window_get_drawmode_button ( VikWindow *vw, VikViewportDrawMode mode );
 gboolean vik_window_get_pan_move ( VikWindow *vw );

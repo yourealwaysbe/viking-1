@@ -173,6 +173,7 @@ struct _VikWindow {
   GtkWindow gtkwindow;
   GtkWidget *hpaned;
   GtkWidget *vpaned;
+  gint vpaned_pos;
   VikViewport *viking_vvp;
   VikLayersPanel *viking_vlp;
   VikStatusbar *viking_vs;
@@ -377,11 +378,6 @@ VikWindow *vik_window_new_window ()
 		      G_CALLBACK (vik_window_new_window), NULL);
 
     gtk_widget_show_all ( GTK_WIDGET(vw) );
-
-    // Start by not showing it at all since nothing is selected
-    //gtk_widget_hide ( vw->properties );
-    // This seems to be needed to be performed after the 'show_all' to have an effect
-    // Unfortunately this can't tell difference between internal auto hide and user setting (ATM)
 
     if ( a_vik_get_restore_window_state() ) {
       // These settings are applied after the show all as these options hide widgets
@@ -829,6 +825,7 @@ static void size_signal_cb ( VikWindow *vw, GtkRequisition *requisition )
 // Force the previously hidden widgets inside the container to get drawn
 static void map_signal_cb ( VikWindow *vw )
 {
+  g_printf ( "%s\n", __FUNCTION__ );
   gtk_widget_show_all ( vw->properties );
 }
 
@@ -978,6 +975,7 @@ static void vik_window_init ( VikWindow *vw )
 
   vw->vpaned = gtk_vpaned_new ();
   vw->properties = gtk_frame_new ( NULL );
+
   g_signal_connect_swapped (G_OBJECT(vw->properties), "map", G_CALLBACK(map_signal_cb), vw);
   g_signal_connect_swapped (G_OBJECT(vw->properties), "size-request", G_CALLBACK(size_signal_cb), vw);
 
@@ -3439,8 +3437,14 @@ void vik_window_set_properties_widgets ( VikWindow *vw, gpointer gp )
   if ( gp ) {
     if ( vw->show_track_graphs ) {
       // Manual restore of previous pane position
-      // TODO actual value...
-      gtk_paned_set_position ( GTK_PANED(vw->vpaned), 700 );
+      // TODO initial value?
+      if ( vw->vpaned_pos <= 0 ) {
+	GtkAllocation allocation;
+	gtk_widget_get_allocation ( GTK_WIDGET(vw->viking_vvp), &allocation );
+	vw->vpaned_pos = allocation.height * 0.8;
+      }
+      g_printf ( "%s %d\n", __FUNCTION__, vw->vpaned_pos );
+      gtk_paned_set_position ( GTK_PANED(vw->vpaned), vw->vpaned_pos );
     }
   }
 }
@@ -3448,6 +3452,22 @@ void vik_window_set_properties_widgets ( VikWindow *vw, gpointer gp )
 gboolean vik_window_get_properties_widgets_shown ( VikWindow *vw )
 {
   return vw->show_track_graphs;
+}
+
+void vik_window_close_properties ( VikWindow *vw )
+{
+  if ( vw->prop_widgets ) {
+    // Store current position of the separator so we can restore it
+    vw->vpaned_pos = gtk_paned_get_position ( GTK_PANED(vw->vpaned) );
+
+    vik_trw_layer_propwin_main_close ( vw->prop_widgets );
+    vw->prop_widgets = NULL;
+
+    // The 'hide' - push the handle all the way to the end
+    GtkAllocation allocation;
+    gtk_widget_get_allocation ( vw->vpaned, &allocation );
+    gtk_paned_set_position ( GTK_PANED(vw->vpaned), allocation.height );
+  }
 }
 
 GtkWidget *vik_window_get_drawmode_button ( VikWindow *vw, VikViewportDrawMode mode )
@@ -5502,19 +5522,26 @@ gboolean vik_window_clear_highlight ( VikWindow *vw )
   //gtk_widget_hide ( vw->properties );
 
   // This only works until first manual resize...
-  gtk_widget_set_size_request ( vw->properties, -1, 0 ); // Auto 'hide'
+  //gtk_widget_set_size_request ( vw->properties, -1, 0 ); // Auto 'hide'
   gint pp = gtk_paned_get_position ( GTK_PANED(vw->vpaned) );
   g_printf ( "%s - %d\n", __FUNCTION__, pp );
 
   // Trying...
   if ( vw->prop_widgets ) {
+    vik_window_close_properties ( vw );
+
+    /*
+    // Store current position of the separator so we can restore it
+    vw->vpaned_pos = gtk_paned_get_position ( GTK_PANED(vw->vpaned) );
+
     vik_trw_layer_propwin_main_close ( vw->prop_widgets );
     vw->prop_widgets = NULL;
 
+    // The 'hide' - push the handle all the way to the end
     GtkAllocation allocation;
     gtk_widget_get_allocation ( vw->vpaned, &allocation );
-
     gtk_paned_set_position ( GTK_PANED(vw->vpaned), allocation.height );
+    */
   }
 
   gboolean need_redraw = FALSE;
