@@ -4029,6 +4029,41 @@ static gboolean graph_tooltip_cb ( GtkWidget  *widget,
 }
 
 /**
+ * vik_trw_layer_propwin_main_refresh:
+ *
+ * Since the track may have changed, recalculate & redraw
+ */
+gboolean vik_trw_layer_propwin_main_refresh ( VikLayer *vl )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  VikTrwLayer *vtl = VIK_TRW_LAYER(vl);
+  VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vtl));
+  PropWidgets *widgets = vik_window_get_properties_widgets ( vw );
+  if ( !widgets )
+    return FALSE;
+
+  if ( widgets->vtl != vtl ) {
+    g_warning ( "VTL unmatched - shouldn't happen!?" );
+    return FALSE;
+  }
+
+  // Should be on the right track...
+  widgets->track_length_inc_gaps = vik_track_get_length_including_gaps ( widgets->tr );
+
+  if ( widgets->altitudes )
+    g_free ( widgets->altitudes );
+  widgets->altitudes = vik_track_make_elevation_map ( widgets->tr, widgets->profile_width );
+
+  if ( widgets->speeds )
+    g_free ( widgets->speeds );
+  widgets->speeds = vik_track_make_speed_map ( widgets->tr, widgets->profile_width );
+
+  draw_all_graphs ( GTK_WIDGET(widgets->graphs), widgets, TRUE );
+
+  return FALSE;
+}
+
+/**
  *
  */
 gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
@@ -4041,13 +4076,13 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   // Only additive at the moment...
   // Need to if same track use existing stuff(?) maybe just the existing widgets...
   PropWidgets *widgets = prop_widgets_new();
-  widgets->vtl = vtl;
   widgets->vvp = vvp;
-  widgets->tr = tr;
+  widgets->vtl = vtl;
+  widgets->tr = tr;    // NB These should be the 'selected' vikwindow ones.
   // Trouble is if we use tabs left/right this cuts into the width
   //  Maybe resort to right click manual change of graph on display...
   // Especially as the tab name itself is currently a bit long and takes up space.
-  // TODO Try to get rid/reduce of this MARGIN_X (maybe make it a widget variable)
+  // TODO Try to get rid/reduce of this MARGIN_X (maybe make it a widgets variable)
   widgets->profile_width = vik_viewport_get_width(vvp) - tab_fudge_factor - MARGIN_X;
   widgets->profile_height = 150; // Restore from previous ?....
 
@@ -4059,7 +4094,7 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
   //gtk_widget_set_size_request ( self, -1, widgets->profile_height );
   // For some reason resizing smaller horizontally is much slower than resizing bigger
    
-  widgets->track_length_inc_gaps = vik_track_get_length_including_gaps(tr);
+  widgets->track_length_inc_gaps = vik_track_get_length_including_gaps ( tr );
   widgets->show_dem = main_show_dem;
   widgets->show_alt_gps_speed = main_show_alt_gps_speed;
   widgets->show_gps_speed = main_show_gps_speed;

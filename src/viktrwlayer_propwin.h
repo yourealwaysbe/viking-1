@@ -47,6 +47,8 @@ gpointer vik_trw_layer_propwin_main ( GtkWindow *parent,
                                       GtkWidget *self,
                                       gboolean show );
 
+gboolean vik_trw_layer_propwin_main_refresh ( VikLayer *vtl );
+
 vik_trw_and_track_t vik_trw_layer_propwin_main_get_track ( gpointer self );
 
 void vik_trw_layer_propwin_main_close ( gpointer self );

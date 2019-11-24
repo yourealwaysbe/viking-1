@@ -90,6 +90,19 @@ static gboolean idle_draw ( VikLayer *vl )
   return FALSE; // Nothing else to do
 }
 
+static VikLayerInterface *vik_layer_interfaces[VIK_LAYER_NUM_TYPES] = {
+  &vik_aggregate_layer_interface,
+  &vik_trw_layer_interface,
+  &vik_coord_layer_interface,
+  &vik_georef_layer_interface,
+  &vik_gps_layer_interface,
+  &vik_maps_layer_interface,
+  &vik_dem_layer_interface,
+#ifdef HAVE_LIBMAPNIK
+  &vik_mapnik_layer_interface,
+#endif
+};
+
 /**
  * Draw specified layer
  */
@@ -103,12 +116,24 @@ void vik_layer_emit_update ( VikLayer *vl )
 
     vik_window_set_redraw_trigger(vl);
 
+    // Notionally the 'refresh' function could be directly connected to the 'update' signal
+    // However we then have to manage the lifecycle (creation, copying, removing, etc...)
+    //  ATM IMHO it's simpler to call/use the function here as we don't need
+    //  any of the features offered by the signal framework
+    // NB This is separate from the idle_draw as that is used by other kinds of updates as well
+
     // Only ever draw when there is time to do so
-    if ( g_thread_self() != thread )
+    if ( g_thread_self() != thread ) {
       // Drawing requested from another (background) thread, so handle via the gdk thread method
       (void)gdk_threads_add_idle ( (GSourceFunc)idle_draw, vl );
-    else
+      if ( vik_layer_interfaces[vl->type]->refresh )
+	(void)gdk_threads_add_idle ( vik_layer_interfaces[vl->type]->refresh, vl );
+    }
+    else {
       (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
+      if ( vik_layer_interfaces[vl->type]->refresh )
+	(void)g_idle_add ( vik_layer_interfaces[vl->type]->refresh, vl );
+    }
   }
 }
 
@@ -130,19 +155,6 @@ void vik_layer_emit_update_secondary ( VikLayer *vl )
     //       so will need to flow background update status through too
     (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
 }
-
-static VikLayerInterface *vik_layer_interfaces[VIK_LAYER_NUM_TYPES] = {
-  &vik_aggregate_layer_interface,
-  &vik_trw_layer_interface,
-  &vik_coord_layer_interface,
-  &vik_georef_layer_interface,
-  &vik_gps_layer_interface,
-  &vik_maps_layer_interface,
-  &vik_dem_layer_interface,
-#ifdef HAVE_LIBMAPNIK
-  &vik_mapnik_layer_interface,
-#endif
-};
 
 VikLayerInterface *vik_layer_get_interface ( VikLayerTypeEnum type )
 {
