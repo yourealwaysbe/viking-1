@@ -533,12 +533,39 @@ static gboolean menu_show_gps_speed_cb ( PropWidgets *widgets )
   return FALSE;
 }
 
+static gboolean menu_properties_cb ( PropWidgets *widgets )
+{
+  vik_trw_layer_propwin_run ( VIK_GTK_WINDOW_FROM_LAYER(widgets->vtl),
+			      widgets->vtl,
+			      widgets->tr,
+			      widgets->vlp,
+			      widgets->vvp,
+			      FALSE );
+  return FALSE;
+}
+
+static gboolean menu_statistics_cb ( PropWidgets *widgets )
+{
+  // TODO maybe separate the statistics (and/or splits too) tab as a single displayable item.
+  vik_trw_layer_propwin_run ( VIK_GTK_WINDOW_FROM_LAYER(widgets->vtl),
+			      widgets->vtl,
+			      widgets->tr,
+			      widgets->vlp,
+			      widgets->vvp,
+			      TRUE );
+  return FALSE;
+}
+
 /**
  *
  */
 static void graph_click_menu_popup ( PropWidgets *widgets, VikPropWinGraphType_t graph_type )
 {
   GtkWidget *menu = gtk_menu_new ();
+  GtkWidget *iprop = vu_menu_add_item ( GTK_MENU(menu), NULL, GTK_STOCK_PROPERTIES, G_CALLBACK(menu_properties_cb), widgets );
+  gtk_widget_set_sensitive ( GTK_WIDGET(iprop), !widgets->tr->property_dialog );
+  GtkWidget *ist = vu_menu_add_item ( GTK_MENU(menu), _("_Statistics"), NULL, G_CALLBACK(menu_statistics_cb), widgets );
+  gtk_widget_set_sensitive ( GTK_WIDGET(ist), !widgets->tr->property_dialog );
   GtkWidget *ism = vu_menu_add_item ( GTK_MENU(menu), _("Split at Marker"), GTK_STOCK_CUT, G_CALLBACK(menu_split_at_marker_cb), widgets );
   gtk_widget_set_sensitive ( ism, (gboolean)GPOINTER_TO_INT(widgets->marker_tp) );
 
