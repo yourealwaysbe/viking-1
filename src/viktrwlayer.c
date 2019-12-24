@@ -3444,6 +3444,11 @@ static gboolean trw_layer_selected ( VikTrwLayer *l, gint subtype, gpointer subl
                   vik_window_close_properties ( vw );
                 }
               }
+              GtkWidget *prop = vik_window_get_properties_widget ( vw );
+              VikViewport *vvp = vik_window_viewport ( vw );
+              gboolean show = vik_window_get_properties_widgets_shown ( vw );
+              vik_window_set_properties_widgets ( vw, vik_trw_layer_propwin_main(GTK_WINDOW(vw), l, track, vvp, prop, show) );
+
               return TRUE; // Mark for redraw
 	    }
 	    break;
