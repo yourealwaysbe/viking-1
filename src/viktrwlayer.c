@@ -4167,6 +4167,37 @@ static void trw_layer_new_wp ( menu_array_layer values )
   }
 }
 
+static void select_current_track ( VikTrwLayer *vtl )
+{
+  if ( ! vtl->current_track )
+    return;
+
+  GHashTable *tbl = NULL;
+  GHashTable *iters = NULL;
+
+  if ( vtl->current_track->is_route ) {
+    tbl = vtl->routes;
+    iters = vtl->routes_iters;
+  } else {
+    tbl = vtl->tracks;
+    iters = vtl->tracks_iters;
+  }
+
+  trku_udata udata;
+  udata.trk  = vtl->current_track;
+  udata.uuid = NULL;
+
+  gpointer trkf = g_hash_table_find ( tbl, (GHRFunc) trw_layer_track_find_uuid, &udata );
+  if ( trkf && udata.uuid ) {
+    GtkTreeIter *it = g_hash_table_lookup ( iters, udata.uuid );
+    vik_treeview_select_iter ( VIK_LAYER(vtl)->vt, it, TRUE );
+  }
+
+  VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vtl));
+  vik_window_set_selected_track ( vw, (gpointer)vtl->current_track, vtl );
+}
+
+
 static void edit_track_create_common ( VikTrwLayer *vtl, gchar *name )
 {
   vtl->current_track = vik_track_new();
@@ -4179,6 +4210,11 @@ static void edit_track_create_common ( VikTrwLayer *vtl, gchar *name )
     gdk_color_parse ( "#000000", &(vtl->current_track->color) );
   vtl->current_track->has_color = TRUE;
   vik_trw_layer_add_track ( vtl, name, vtl->current_track );
+
+  // select track
+  VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vtl));
+  vik_window_set_selected_track ( vw, (gpointer)vtl->current_track, vtl );
+  select_current_track ( vtl );
 }
 
 static void trw_layer_edit_track ( menu_array_layer values )
@@ -4204,6 +4240,11 @@ static void edit_route_create_common ( VikTrwLayer *vtl, gchar *name )
   vtl->current_track->has_color = TRUE;
   gdk_color_parse ( "red", &vtl->current_track->color );
   vik_trw_layer_add_route ( vtl, name, vtl->current_track );
+
+  // select route
+  VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vtl));
+  vik_window_set_selected_track ( vw, (gpointer)vtl->current_track, vtl );
+  select_current_track ( vtl );
 }
 
 static void trw_layer_edit_route ( menu_array_layer values )
