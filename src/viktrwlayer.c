@@ -11433,3 +11433,9 @@ static gboolean tool_splitter_click ( VikTrwLayer *vtl, GdkEventButton *event, V
 
   return FALSE;
 }
+
+gboolean vik_trw_layer_editing_track ( VikTrwLayer *vtl, VikTrack *tr )
+{
+  return vtl->current_track != NULL && vtl->current_track == tr;
+}
+

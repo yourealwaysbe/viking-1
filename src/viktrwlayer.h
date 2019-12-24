@@ -181,6 +181,8 @@ GHashTable *vik_trw_layer_get_tracks_iters ( VikTrwLayer *vtl );
 GHashTable *vik_trw_layer_get_routes_iters ( VikTrwLayer *vtl );
 GHashTable *vik_trw_layer_get_waypoints_iters ( VikTrwLayer *vtl );
 
+gboolean vik_trw_layer_editing_track ( VikTrwLayer *vtl, VikTrack *tr );
+
 #define VIK_SETTINGS_LIST_DATE_FORMAT "list_date_format"
 
 G_END_DECLS

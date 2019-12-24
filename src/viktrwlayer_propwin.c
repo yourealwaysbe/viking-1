@@ -4066,8 +4066,20 @@ gboolean vik_trw_layer_propwin_main_refresh ( VikLayer *vl )
   VikTrwLayer *vtl = VIK_TRW_LAYER(vl);
   VikWindow *vw = VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vtl));
   PropWidgets *widgets = vik_window_get_properties_widgets ( vw );
-  if ( !widgets )
+  VikTrack *track = vik_window_get_selected_track ( vw );
+
+  if ( !widgets && vik_trw_layer_editing_track ( vtl, track ) ) {
+    VikViewport *vvp = vik_window_viewport ( vw );
+    GtkWidget *prop = vik_window_get_properties_widget ( vw );
+    gboolean show = vik_window_get_properties_widgets_shown ( vw );
+
+    widgets = vik_trw_layer_propwin_main ( GTK_WINDOW(vw), vtl, track, vvp, prop, show );
+    vik_window_set_properties_widgets ( vw, widgets );
+  }
+
+  if ( !widgets ) {
     return FALSE;
+  }
 
   if ( widgets->vtl != vtl ) {
     g_warning ( "VTL unmatched - shouldn't happen!?" );
