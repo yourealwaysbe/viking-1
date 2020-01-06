@@ -309,6 +309,8 @@ VikLayerInterface vik_gps_layer_interface = {
   (VikLayerFuncSelectMove)              NULL,
   (VikLayerFuncSelectRelease)           NULL,
   (VikLayerFuncSelectedViewportMenu)    NULL,
+
+  (VikLayerFuncRefresh)                 NULL,
 };
 
 enum {TRW_DOWNLOAD=0, TRW_UPLOAD,
@@ -1819,11 +1821,15 @@ static void gpsd_raw_hook(VglGpsd *vgpsd, gchar *data)
 static gboolean gpsd_data_check(gpointer user_data)
 {
   VikGpsLayer *vgl = user_data;
-#if GPSD_API_MAJOR_VERSION >= 5
+#if GPSD_API_MAJOR_VERSION == 5 || GPSD_API_MAJOR_VERSION == 6
   if (gps_read(&vgl->vgpsd->gpsd) > -1) {
+#elif GPSD_API_MAJOR_VERSION >= 7
+  if (gps_read(&vgl->vgpsd->gpsd, NULL, 0) > -1) {
+#else
+  // Broken compile
+#endif
     gpsd_raw_hook(vgl->vgpsd, NULL);
   }
-#endif
   return TRUE;
 }
 #else

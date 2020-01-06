@@ -55,6 +55,12 @@ VikWindow *vik_window_new_window ();
 
 void vik_window_new_window_finish ( VikWindow *vw );
 
+GtkWidget *vik_window_get_graphs_widget ( VikWindow *vw );
+gpointer vik_window_get_graphs_widgets ( VikWindow *vw );
+void vik_window_set_graphs_widgets ( VikWindow *vw, gpointer gp );
+gboolean vik_window_get_graphs_widgets_shown ( VikWindow *vw );
+void vik_window_close_graphs ( VikWindow *vw );
+
 GtkWidget *vik_window_get_drawmode_button ( VikWindow *vw, VikViewportDrawMode mode );
 gboolean vik_window_get_pan_move ( VikWindow *vw );
 void vik_window_open_file ( VikWindow *vw, const gchar *filename, gboolean change_filename, gboolean first, gboolean last, gboolean new_layer, gboolean external );
@@ -84,7 +90,7 @@ void vik_window_set_selected_waypoint ( VikWindow *vw, gpointer *vwp, gpointer v
 /* Return the VikTrwLayer of the selected track(s) or waypoint(s) are in (maybe NULL) */
 gpointer vik_window_get_containing_trw_layer ( VikWindow *vw );
 /* return indicates if a redraw is necessary */
-gboolean vik_window_clear_highlight ( VikWindow *vw );
+gboolean vik_window_clear_selected ( VikWindow *vw );
 
 GThread *vik_window_get_thread ( VikWindow *vw );
 

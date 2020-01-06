@@ -31,6 +31,8 @@
 #include "viktrwlayer_waypointlist.h"
 #include "viktrwlayer_wpwin.h"
 #include "vikutils.h"
+#include "ui_util.h"
+#include "dem.h"
 
 // Long formatted date+basic time - listing this way ensures the string comparison sort works - so no local type format %x or %c here!
 #define WAYPOINT_LIST_DATE_FORMAT "%Y-%m-%d %H:%M"
@@ -46,26 +48,6 @@ static void waypoint_close_cb ( GtkWidget *dialog, gint resp, GList *data )
 
 	gtk_widget_destroy (dialog);
 }
-
-/**
- * format_1f_cell_data_func:
- *
- * General purpose column double formatting
- *
-static void format_1f_cell_data_func ( GtkTreeViewColumn *col,
-                                       GtkCellRenderer   *renderer,
-                                       GtkTreeModel      *model,
-                                       GtkTreeIter       *iter,
-                                       gpointer           user_data )
-{
-	gdouble value;
-	gchar buf[20];
-	gint column = GPOINTER_TO_INT (user_data);
-	gtk_tree_model_get ( model, iter, column, &value, -1 );
-	g_snprintf ( buf, sizeof(buf), "%.1f", value );
-	g_object_set ( renderer, "text", buf, NULL );
-}
- */
 
 #define WPT_LIST_COLS 9
 #define WPT_COL_NUM WPT_LIST_COLS-1
@@ -342,7 +324,7 @@ static gboolean trw_layer_waypoint_menu_popup_multi  ( GtkWidget *tree_view,
 	GtkWidget *menu = gtk_menu_new();
 
 	add_copy_menu_items ( GTK_MENU(menu), tree_view );
-
+	gtk_widget_show_all ( menu );
 	gtk_menu_popup ( GTK_MENU(menu), NULL, NULL, NULL, NULL, event->button, gtk_get_current_event_time() );
 
 	return TRUE;
@@ -475,11 +457,15 @@ static void trw_layer_waypoint_list_add ( vik_trw_waypoint_list_t *vtdl,
 	visible = visible && vik_trw_layer_get_waypoints_visibility(vtl);
 
 	gdouble alt = wpt->altitude;
-	switch (height_units) {
-	case VIK_UNITS_HEIGHT_FEET: alt = VIK_METERS_TO_FEET(alt); break;
-	default:
-		// VIK_UNITS_HEIGHT_METRES: no need to convert
-		break;
+	if ( isnan(alt) ) {
+		alt = VIK_DEM_INVALID_ELEVATION;
+	} else {
+		switch (height_units) {
+		case VIK_UNITS_HEIGHT_FEET: alt = VIK_METERS_TO_FEET(alt); break;
+		default:
+			// VIK_UNITS_HEIGHT_METRES: no need to convert
+			break;
+		}
 	}
 
 	gtk_tree_store_append ( store, &t_iter, NULL );
@@ -514,14 +500,27 @@ gint sort_pixbuf_compare_func ( GtkTreeModel *model,
 	return g_strcmp0 ( wpt1->symbol, wpt2->symbol );
 }
 
-static GtkTreeViewColumn *my_new_column_text ( const gchar *title, GtkCellRenderer *renderer, GtkWidget *view, gint column_runner )
+/**
+ * format_elev_cell_data_func
+ *
+ * Integer display handling invalid/undefined elevation values
+ *
+ */
+static void format_elev_cell_data_func ( GtkTreeViewColumn *col,
+                                         GtkCellRenderer   *renderer,
+                                         GtkTreeModel      *model,
+                                         GtkTreeIter       *iter,
+                                         gpointer           user_data )
 {
-	GtkTreeViewColumn *column = gtk_tree_view_column_new_with_attributes ( title, renderer, "text", column_runner, NULL );
-	gtk_tree_view_column_set_sort_column_id ( column, column_runner );
-	gtk_tree_view_append_column ( GTK_TREE_VIEW(view), column );
-	gtk_tree_view_column_set_reorderable ( column, TRUE );
-	gtk_tree_view_column_set_resizable ( column, TRUE );
-	return column;
+	gint value;
+	gchar buf[20];
+	gint column = GPOINTER_TO_INT(user_data);
+	gtk_tree_model_get ( model, iter, column, &value, -1 );
+	if ( value == VIK_DEM_INVALID_ELEVATION )
+		g_snprintf ( buf, sizeof(buf), "--" );
+	else
+		g_snprintf ( buf, sizeof(buf), "%d", value );
+	g_object_set ( renderer, "text", buf, NULL );
 }
 
 /**
@@ -581,7 +580,7 @@ static void vik_trw_layer_waypoint_list_internal ( GtkWidget *dialog,
 	gint column_runner = 0;
 	if ( show_layer_names ) {
 		// Insert column for the layer name when viewing multi layers
-		column = my_new_column_text ( _("Layer"), renderer, view, column_runner++ );
+		column = ui_new_column_text ( _("Layer"), renderer, view, column_runner++ );
 		g_object_set (G_OBJECT (renderer), "xalign", 0.0, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
 		gtk_tree_view_column_set_expand ( column, TRUE );
 		// remember the layer column so we can sort by it later
@@ -590,13 +589,13 @@ static void vik_trw_layer_waypoint_list_internal ( GtkWidget *dialog,
 	else
 		column_runner++;
 
-	column = my_new_column_text ( _("Name"), renderer, view, column_runner++ );
+	column = ui_new_column_text ( _("Name"), renderer, view, column_runner++ );
 	gtk_tree_view_column_set_expand ( column, TRUE );
 	if ( !show_layer_names )
 		// remember the name column so we can sort by it later
 		sort_by_column = column;
 
-	column = my_new_column_text ( _("Date"), renderer, view, column_runner++ );
+	column = ui_new_column_text ( _("Date"), renderer, view, column_runner++ );
 	gtk_tree_view_column_set_resizable ( column, TRUE );
 
 	GtkCellRenderer *renderer_toggle = gtk_cell_renderer_toggle_new ();
@@ -605,13 +604,16 @@ static void vik_trw_layer_waypoint_list_internal ( GtkWidget *dialog,
 	gtk_tree_view_append_column ( GTK_TREE_VIEW(view), column );
 	column_runner++;
 
-	column = my_new_column_text ( _("Comment"), renderer, view, column_runner++ );
+	column = ui_new_column_text ( _("Comment"), renderer, view, column_runner++ );
 	gtk_tree_view_column_set_expand ( column, TRUE );
 
 	if ( height_units == VIK_UNITS_HEIGHT_FEET )
-		(void)my_new_column_text ( _("Max Height\n(Feet)"), renderer, view, column_runner++ );
+		column = ui_new_column_text ( _("Max Height\n(Feet)"), renderer, view, column_runner++ );
 	else
-		(void)my_new_column_text ( _("Max Height\n(Metres)"), renderer, view, column_runner++ );
+		column = ui_new_column_text ( _("Max Height\n(Metres)"), renderer, view, column_runner++ );
+	// Apply own formatting of the data
+	gtk_tree_view_column_set_cell_data_func ( column, renderer, format_elev_cell_data_func, GINT_TO_POINTER(column_runner-1), NULL);
+
 
 	GtkCellRenderer *renderer_pixbuf = gtk_cell_renderer_pixbuf_new ();
 	g_object_set (G_OBJECT (renderer_pixbuf), "xalign", 0.5, NULL);

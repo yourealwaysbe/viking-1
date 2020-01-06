@@ -448,6 +448,26 @@ static void split_spin_focused ( GtkSpinButton *spin, GtkWidget *pass_along[1] )
   gtk_toggle_button_set_active    (GTK_TOGGLE_BUTTON(pass_along[0]), 1);
 }
 
+static void time_1m_clicked_cb ( GtkButton *button, GtkWidget *spin )
+{
+  gtk_spin_button_set_value ( GTK_SPIN_BUTTON(spin), 1.0 );
+}
+
+static void time_1h_clicked_cb ( GtkButton *button, GtkWidget *spin )
+{
+  gtk_spin_button_set_value ( GTK_SPIN_BUTTON(spin), 60.0 );
+}
+
+static void time_6h_clicked_cb ( GtkButton *button, GtkWidget *spin )
+{
+  gtk_spin_button_set_value ( GTK_SPIN_BUTTON(spin), 6*60.0 );
+}
+
+static void time_1d_clicked_cb ( GtkButton *button, GtkWidget *spin )
+{
+  gtk_spin_button_set_value ( GTK_SPIN_BUTTON(spin), 24*60.0 );
+}
+
 gboolean a_dialog_time_threshold ( GtkWindow *parent, gchar *title_text, gchar *label_text, guint *thr )
 {
   GtkWidget *dialog = gtk_dialog_new_with_buttons (title_text, 
@@ -458,20 +478,21 @@ gboolean a_dialog_time_threshold ( GtkWindow *parent, gchar *title_text, gchar *
                                                   GTK_STOCK_OK,
                                                   GTK_RESPONSE_ACCEPT,
                                                   NULL);
-  GtkWidget *table, *t1, *t2, *t3, *t4, *spin, *label;
+  GtkWidget *table, *t1, *t2, *t3, *t4, *t5, *spin, *label;
   GtkWidget *pass_along[1];
 
-  table = gtk_table_new ( 4, 2, FALSE );
+  table = gtk_table_new ( 5, 2, FALSE );
   gtk_box_pack_start ( GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), table, TRUE, TRUE, 0 );
 
   label = gtk_label_new (label_text);
 
   t1 = gtk_radio_button_new_with_label ( NULL, _("1 min") );
   t2 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t1), _("1 hour") );
-  t3 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t2), _("1 day") );
-  t4 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t3), _("Custom (in minutes):") );
+  t3 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t2), _("6 hours") );
+  t4 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t3), _("1 day") );
+  t5 = gtk_radio_button_new_with_label_from_widget ( GTK_RADIO_BUTTON(t4), _("Custom (in minutes):") );
 
-  pass_along[0] = t4;
+  pass_along[0] = t5;
 
   spin = gtk_spin_button_new ( (GtkAdjustment *) gtk_adjustment_new ( *thr, 0, 65536, 1, 5, 0 ), 1, 0 );
 
@@ -480,11 +501,17 @@ gboolean a_dialog_time_threshold ( GtkWindow *parent, gchar *title_text, gchar *
   gtk_table_attach_defaults ( GTK_TABLE(table), t2, 0, 1, 2, 3 );
   gtk_table_attach_defaults ( GTK_TABLE(table), t3, 0, 1, 3, 4 );
   gtk_table_attach_defaults ( GTK_TABLE(table), t4, 0, 1, 4, 5 );
-  gtk_table_attach_defaults ( GTK_TABLE(table), spin, 1, 2, 4, 5 );
+  gtk_table_attach_defaults ( GTK_TABLE(table), t5, 0, 1, 5, 6 );
+  gtk_table_attach_defaults ( GTK_TABLE(table), spin, 1, 2, 5, 6 );
 
   gtk_widget_show_all ( table );
 
   g_signal_connect ( G_OBJECT(spin), "grab-focus", G_CALLBACK(split_spin_focused), pass_along );
+
+  g_signal_connect ( G_OBJECT(t1), "clicked", G_CALLBACK(time_1m_clicked_cb), spin );
+  g_signal_connect ( G_OBJECT(t2), "clicked", G_CALLBACK(time_1h_clicked_cb), spin );
+  g_signal_connect ( G_OBJECT(t3), "clicked", G_CALLBACK(time_6h_clicked_cb), spin );
+  g_signal_connect ( G_OBJECT(t4), "clicked", G_CALLBACK(time_1d_clicked_cb), spin );
 
   gtk_dialog_set_default_response ( GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT );
 
@@ -495,8 +522,10 @@ gboolean a_dialog_time_threshold ( GtkWindow *parent, gchar *title_text, gchar *
     } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t2))) {
       *thr = 60;
     } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t3))) {
-      *thr = 60 * 24;
+      *thr = 60 * 6;
     } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t4))) {
+      *thr = 60 * 24;
+    } else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(t5))) {
       *thr = gtk_spin_button_get_value ( GTK_SPIN_BUTTON(spin) );
     }
     gtk_widget_destroy ( dialog );
@@ -623,7 +652,6 @@ void a_dialog_about ( GtkWindow *parent )
 
   // Would be nice to use gtk_about_dialog_add_credit_section (), but that requires gtk 3.4
   // For now shove it in the 'artists' section so at least the information is easily visible
-  // Something more advanced might have proper version information too...
   const gchar *libs[] = {
     "Compiled in libraries:",
     // Default libs
@@ -780,4 +808,83 @@ void a_dialog_license ( GtkWindow *parent, const gchar *map, const gchar *licens
     }
   } while (response != GTK_RESPONSE_DELETE_EVENT && response != GTK_RESPONSE_OK);
   gtk_widget_destroy (dialog);
+}
+
+/**
+ * Mainly for debug
+ * Run Time or Build information that can be easily extracted from the libraries in use
+ */
+#ifdef HAVE_LIBCURL
+#include <curl/curl.h>
+#endif
+#ifdef HAVE_GPS_H
+#include <gps.h>
+#endif
+#ifdef HAVE_LIBGEXIV2
+#include <gexiv2/gexiv2.h>
+#endif
+#ifdef HAVE_MAGIC_H
+#include <magic.h>
+#endif
+#ifdef HAVE_ZIP_H
+#include <zip.h>
+#endif
+#ifdef HAVE_SQLITE3_H
+#include "sqlite3.h"
+#endif
+#ifdef HAVE_LIBMAPNIK
+#include <mapnik/version.hpp>
+#endif
+#ifdef HAVE_OAUTH_H
+#include <oauth.h>
+#endif
+
+void a_dialog_build_info ( GtkWindow *parent )
+{
+  GString *msg = g_string_new ( "" );
+  g_string_append_printf ( msg, "GLIB version: %d.%d.%d\n", glib_major_version, glib_minor_version, glib_micro_version  );
+#if GTK_CHECK_VERSION(3,0,0)
+  g_string_append_printf ( msg, "GTK version: %d.%d.%d\n", gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version() );
+#else
+  g_string_append_printf ( msg, "GTK API version: %d.%d.%d\n", GTK_MAJOR_VERSION, GTK_MINOR_VERSION, GTK_MICRO_VERSION );
+#endif
+  g_string_append_printf ( msg, "GDK Pixbuf version: %s\n", gdk_pixbuf_version );
+  g_string_append_printf ( msg, "Cairo version: %s\n", cairo_version_string() );
+  g_string_append_printf ( msg, "Pango version: %s\n", pango_version_string() );
+#ifdef HAVE_LIBCURL
+  g_string_append_printf ( msg, "libcurl version: %s\n", curl_version() );
+#endif
+#ifdef HAVE_GPS_H
+  g_string_append_printf ( msg, "GPSD API version: %d.%d\n", GPSD_API_MAJOR_VERSION, GPSD_API_MINOR_VERSION );
+#endif
+#ifdef HAVE_LIBGEXIV2
+  g_string_append_printf ( msg, "gexiv2 version: %06d\n", gexiv2_get_version() );
+#endif
+#ifdef HAVE_MAGIC_H
+#ifdef MAGIC_VERSION
+  g_string_append_printf ( msg, "magic API version: %d\n", MAGIC_VERSION );
+#endif
+#endif
+#ifdef HAVE_ZIP_H
+#ifdef LIBZIP_VERSION
+  g_string_append_printf ( msg, "libzip version: %s\n", LIBZIP_VERSION );
+#endif
+#endif
+#ifdef HAVE_SQLITE3_H
+#ifdef SQLITE_VERSION
+  g_string_append_printf ( msg, "libsqlite version: %s\n", SQLITE_VERSION );
+#endif
+#endif
+#ifdef HAVE_LIBMAPNIK
+#ifdef MAPNIK_VERSION_STRING
+  g_string_append_printf ( msg, "mapnik version: %s\n", MAPNIK_VERSION_STRING );
+#endif
+#endif
+#ifdef HAVE_OAUTH_H
+#ifdef LIBOAUTH_VERSION
+  g_string_append_printf ( msg, "liboauth version: %s\n", LIBOAUTH_VERSION );
+#endif
+#endif
+  a_dialog_info_msg ( parent, msg->str );
+  g_string_free ( msg, TRUE );
 }

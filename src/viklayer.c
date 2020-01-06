@@ -90,47 +90,6 @@ static gboolean idle_draw ( VikLayer *vl )
   return FALSE; // Nothing else to do
 }
 
-/**
- * Draw specified layer
- */
-void vik_layer_emit_update ( VikLayer *vl )
-{
-  if ( vl->visible && vl->realized ) {
-    GThread *thread = vik_window_get_thread ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vl)) );
-    if ( !thread )
-      // Do nothing
-      return;
-
-    vik_window_set_redraw_trigger(vl);
-
-    // Only ever draw when there is time to do so
-    if ( g_thread_self() != thread )
-      // Drawing requested from another (background) thread, so handle via the gdk thread method
-      gdk_threads_add_idle ( (GSourceFunc) idle_draw, vl );
-    else
-      g_idle_add ( (GSourceFunc) idle_draw, vl );
-  }
-}
-
-/**
- * should only be done by VikLayersPanel (hence never used from the background)
- * need to redraw and record trigger when we make a layer invisible.
- */
-void vik_layer_emit_update_although_invisible ( VikLayer *vl )
-{
-  vik_window_set_redraw_trigger(vl);
-  g_idle_add ( (GSourceFunc) idle_draw, vl );
-}
-
-/* doesn't set the trigger. should be done by aggregate layer when child emits update. */
-void vik_layer_emit_update_secondary ( VikLayer *vl )
-{
-  if ( vl->visible )
-    // TODO: this can used from the background - eg in acquire
-    //       so will need to flow background update status through too
-    g_idle_add ( (GSourceFunc) idle_draw, vl );
-}
-
 static VikLayerInterface *vik_layer_interfaces[VIK_LAYER_NUM_TYPES] = {
   &vik_aggregate_layer_interface,
   &vik_trw_layer_interface,
@@ -143,6 +102,87 @@ static VikLayerInterface *vik_layer_interfaces[VIK_LAYER_NUM_TYPES] = {
   &vik_mapnik_layer_interface,
 #endif
 };
+
+/**
+ * Draw specified layer (c.f. vik_layer_draw)
+ * The draw is ensured to be in the GUI thread,
+ *  and happens at some point in the main loop update rather than 'now'
+ */
+void vik_layer_redraw ( VikLayer *vl )
+{
+  if ( vl->visible && vl->realized ) {
+    GThread *thread = vik_window_get_thread ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vl)) );
+    if ( !thread )
+      // Do nothing
+      return;
+
+    vik_window_set_redraw_trigger(vl);
+
+    // Only ever draw when there is time to do so
+    if ( g_thread_self() != thread ) {
+      // Drawing requested from another (background) thread, so handle via the gdk thread method
+      (void)gdk_threads_add_idle ( (GSourceFunc)idle_draw, vl );
+    }
+    else {
+      (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
+    }
+  }
+}
+
+/**
+ * An update event
+ * Redraw specified layer and a notification about the update
+ */
+void vik_layer_emit_update ( VikLayer *vl )
+{
+  g_printf ( "%s\n", __FUNCTION__ );
+  if ( vl->visible && vl->realized ) {
+    GThread *thread = vik_window_get_thread ( VIK_WINDOW(VIK_GTK_WINDOW_FROM_LAYER(vl)) );
+    if ( !thread )
+      // Do nothing
+      return;
+
+    vik_window_set_redraw_trigger(vl);
+
+    // Notionally the 'refresh' function could be directly connected to the 'update' signal
+    // However we then have to manage the lifecycle (creation, copying, removing, etc...)
+    //  ATM IMHO it's simpler to call/use the function here as we don't need
+    //  any of the features offered by the signal framework
+    // NB This is separate from the idle_draw as that is used by other kinds of updates as well
+
+    // Only ever draw when there is time to do so
+    if ( g_thread_self() != thread ) {
+      // Drawing requested from another (background) thread, so handle via the gdk thread method
+      (void)gdk_threads_add_idle ( (GSourceFunc)idle_draw, vl );
+      if ( vik_layer_interfaces[vl->type]->refresh )
+	(void)gdk_threads_add_idle ( (GSourceFunc)vik_layer_interfaces[vl->type]->refresh, vl );
+    }
+    else {
+      (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
+      if ( vik_layer_interfaces[vl->type]->refresh )
+	(void)g_idle_add ( (GSourceFunc)vik_layer_interfaces[vl->type]->refresh, vl );
+    }
+  }
+}
+
+/**
+ * should only be done by VikLayersPanel (hence never used from the background)
+ * need to redraw and record trigger when we make a layer invisible.
+ */
+void vik_layer_emit_update_although_invisible ( VikLayer *vl )
+{
+  vik_window_set_redraw_trigger(vl);
+  (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
+}
+
+/* doesn't set the trigger. should be done by aggregate layer when child emits update. */
+void vik_layer_emit_update_secondary ( VikLayer *vl )
+{
+  if ( vl->visible )
+    // TODO: this can used from the background - eg in acquire
+    //       so will need to flow background update status through too
+    (void)g_idle_add ( (GSourceFunc)idle_draw, vl );
+}
 
 VikLayerInterface *vik_layer_get_interface ( VikLayerTypeEnum type )
 {
@@ -468,7 +508,7 @@ gboolean vik_layer_selected ( VikLayer *l, gint subtype, gpointer sublayer, gint
   if ( vik_layer_interfaces[l->type]->layer_selected )
     return vik_layer_interfaces[l->type]->layer_selected ( l, subtype, sublayer, type, vlp );
   /* Since no 'layer_selected' function explicitly turn off here */
-  return vik_window_clear_highlight ( (VikWindow *)VIK_GTK_WINDOW_FROM_LAYER(l) );
+  return vik_window_clear_selected ( (VikWindow *)VIK_GTK_WINDOW_FROM_LAYER(l) );
 }
 
 void vik_layer_realize ( VikLayer *l, VikTreeview *vt, GtkTreeIter *layer_iter )
